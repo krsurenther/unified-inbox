@@ -1,0 +1,31 @@
+# deps / build
+node_modules/
+out/
+dist/
+*.tsbuildinfo
+
+# secrets & local config (NEVER commit)
+.env
+.env.*
+!.env.example
+config.local.json
+
+# captured API recon (contains real endpoints/shapes — never commit)
+.capture/
+
+# local data store
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# channel session state (WhatsApp Web auth, etc.) — Phase 2+
+.wwebjs_auth/
+.wwebjs_cache/
+auth/
+
+# misc
+*.log
+.DS_Store
+.vite/
