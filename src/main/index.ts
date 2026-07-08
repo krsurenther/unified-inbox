@@ -160,6 +160,11 @@ function registerIpc(): void {
   ipcMain.handle('wa:list', () => waManager?.list() ?? []);
   ipcMain.handle('wa:connect', (_e, id: string) => waManager?.connect(id));
   ipcMain.handle('wa:disconnect', (_e, id: string) => waManager?.disconnect(id));
+  ipcMain.handle('wa:guardStatus', () => waManager?.guardStatus() ?? { killed: false, numbers: [] });
+  ipcMain.handle('wa:setKill', (_e, on: boolean) => {
+    waManager?.setKillSwitch(on);
+    return waManager?.guardStatus() ?? { killed: false, numbers: [] };
+  });
 }
 
 function createWindow(): void {
@@ -189,8 +194,12 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   // WhatsApp: per-number clients; linked sessions auto-start, others link in-app.
-  waManager = new WhatsAppManager(service, config.whatsapp.numbers, join(process.cwd(), '.wwebjs_auth'), () => {
-    win?.webContents.send('wa:update', waManager?.list() ?? []);
+  waManager = new WhatsAppManager({
+    service,
+    numbers: config.whatsapp.numbers,
+    dataPath: join(process.cwd(), '.wwebjs_auth'),
+    dailyCap: config.whatsapp.dailyCap,
+    onChange: () => win?.webContents.send('wa:update', waManager?.list() ?? []),
   });
   waManager.autoStartLinked();
   // Connect Duoke in the background, then keep it fresh.

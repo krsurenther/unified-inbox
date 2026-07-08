@@ -3,13 +3,25 @@ import { join } from 'node:path';
 import QRCode from 'qrcode';
 import { createWaClient } from '../core/channels/whatsapp/createWaClient';
 import { WhatsAppAdapter } from '../core/channels/whatsapp/WhatsAppAdapter';
+import { WhatsAppGuard, type WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 import type { InboxService } from '../core/InboxService';
 import type { WaNumberState } from '../shared/inbox-api';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Entry {
   cfg: { id: string; label: string };
   adapter?: WhatsAppAdapter;
   state: WaNumberState;
+}
+
+export interface WhatsAppManagerOptions {
+  service: InboxService;
+  numbers: Array<{ id: string; label: string }>;
+  dataPath: string;
+  onChange: () => void;
+  /** Anti-ban: max sends per number per rolling 24h. */
+  dailyCap?: number;
 }
 
 /**
@@ -20,18 +32,39 @@ interface Entry {
  */
 export class WhatsAppManager {
   private readonly entries = new Map<string, Entry>();
+  private readonly service: InboxService;
+  private readonly dataPath: string;
+  private readonly onChange: () => void;
+  private readonly guard: WhatsAppGuard;
 
-  constructor(
-    private readonly service: InboxService,
-    numbers: Array<{ id: string; label: string }>,
-    private readonly dataPath: string,
-    private readonly onChange: () => void,
-  ) {
-    for (const n of numbers) this.entries.set(n.id, { cfg: n, state: { id: n.id, label: n.label, state: 'idle' } });
+  constructor(opts: WhatsAppManagerOptions) {
+    this.service = opts.service;
+    this.dataPath = opts.dataPath;
+    this.onChange = opts.onChange;
+    for (const n of opts.numbers) this.entries.set(n.id, { cfg: n, state: { id: n.id, label: n.label, state: 'idle' } });
+    // Anti-ban guard: one send policy per number + a shared kill switch. The
+    // recent-send count comes from the send-audit log over a rolling 24h window.
+    this.guard = new WhatsAppGuard({
+      numbers: opts.numbers,
+      dailyCap: opts.dailyCap,
+      countRecentSends: (channelId) =>
+        this.service.sendCountSince(channelId, new Date(Date.now() - DAY_MS).toISOString()),
+    });
   }
 
   list(): WaNumberState[] {
     return [...this.entries.values()].map((e) => e.state);
+  }
+
+  /** Per-number send counts / risk + the global kill-switch state (for the UI). */
+  guardStatus(): Promise<WaGuardStatus> {
+    return this.guard.status();
+  }
+
+  /** Engage/release the global kill switch — pauses ALL WhatsApp sending when on. */
+  setKillSwitch(on: boolean): void {
+    this.guard.setKill(on);
+    this.onChange();
   }
 
   private hasSession(id: string): boolean {
@@ -55,6 +88,7 @@ export class WhatsAppManager {
     const adapter = new WhatsAppAdapter({
       client: createWaClient({ clientId: id, dataPath: this.dataPath }),
       number: e.cfg,
+      sendPolicy: this.guard.policyFor(id), // anti-ban: cap + pacing + kill switch
       onQr: (qr) => {
         void QRCode.toDataURL(qr, { width: 320, margin: 1 }).then((qrDataUrl) => {
           e.state = { ...e.state, state: 'qr', qrDataUrl };

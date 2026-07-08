@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
-import type { WaNumberState } from '../shared/inbox-api';
+import type { WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { inbox } from './api';
 
 export function App() {
@@ -13,6 +13,7 @@ export function App() {
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [waOpen, setWaOpen] = useState(false);
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
+  const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [filter, setFilter] = useState<'all' | 'marketplace' | 'whatsapp'>('all');
 
   const refreshThreads = useCallback(async () => {
@@ -102,6 +103,28 @@ export function App() {
     return inbox.onWaUpdate(setWaNumbers);
   }, []);
 
+  // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
+  // so the risk bands and daily counters stay live as replies go out.
+  const refreshGuard = useCallback(() => {
+    inbox.whatsappGuard().then(setWaGuard).catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshGuard();
+    const iv = setInterval(refreshGuard, 15000);
+    return () => clearInterval(iv);
+  }, [refreshGuard]);
+
+  const toggleKill = async () => {
+    const next = !(waGuard?.killed ?? false);
+    if (next && !window.confirm('Engage the kill switch? This immediately pauses ALL WhatsApp sending until you turn it back off.')) return;
+    try {
+      setWaGuard(await inbox.setWhatsappKill(next));
+      flash(next ? '⛔ WhatsApp sending paused (kill switch ON)' : 'WhatsApp sending resumed');
+    } catch (e) {
+      flash(`Kill switch failed: ${(e as Error).message}`, true);
+    }
+  };
+
   const flash = (text: string, error = false) => {
     setToast({ text, error });
     setTimeout(() => setToast(null), error ? 4500 : 2500);
@@ -129,6 +152,7 @@ export function App() {
       if (res.sent) {
         setHistory(await inbox.getHistory(selectedId));
         await refreshThreads();
+        refreshGuard(); // a WhatsApp send moves the daily counter / risk band
         flash('Reply sent ✓');
       }
     } catch (e) {
@@ -172,6 +196,7 @@ export function App() {
         <div className="top-actions">
           <button className="btn ghost" onClick={() => setWaOpen(true)}>
             ✆ WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' ✓' : ''}
+            {waGuard?.killed ? ' ⛔' : waGuard?.numbers.some((n) => n.risk === 'high') ? ' ⚠️' : ''}
           </button>
           <button className="btn ghost" onClick={onSimulate} disabled={busy}>
             ✦ Simulate incoming
@@ -282,6 +307,19 @@ export function App() {
               Link a number once. On your phone: WhatsApp → Settings → Linked Devices → Link a Device → scan.
               Receiving only — replies are always approved by you.
             </p>
+
+            <div className={`wa-kill ${waGuard?.killed ? 'on' : ''}`}>
+              <div className="wa-kill-text">
+                <span className="wa-kill-title">{waGuard?.killed ? '⛔ Sending paused' : '🟢 Sending active'}</span>
+                <span className="wa-kill-sub">
+                  Kill switch — instantly stop all outbound WhatsApp messages. Human-like pacing &amp; per-number daily caps are always on.
+                </span>
+              </div>
+              <button className={`btn ${waGuard?.killed ? 'primary' : 'danger'}`} onClick={toggleKill}>
+                {waGuard?.killed ? 'Resume sending' : 'Pause all sending'}
+              </button>
+            </div>
+
             {waNumbers.length === 0 && <div className="wa-hint">No WhatsApp numbers configured.</div>}
             {waNumbers.map((n) => (
               <div key={n.id} className="wa-row">
@@ -292,6 +330,18 @@ export function App() {
                     {n.threads != null ? ` · ${n.threads} chats` : ''}
                   </span>
                 </div>
+                {(() => {
+                  const g = waGuard?.numbers.find((x) => x.id === n.id);
+                  if (!g) return null;
+                  return (
+                    <div className={`wa-quota risk-${g.risk}`}>
+                      <span className="wa-quota-count">
+                        {g.sentInWindow}/{g.cap} sent · last 24h
+                      </span>
+                      <span className="wa-quota-risk">{g.risk} ban risk</span>
+                    </div>
+                  );
+                })()}
                 {n.state === 'qr' && n.qrDataUrl && (
                   <div className="wa-qr">
                     <img src={n.qrDataUrl} alt="WhatsApp link QR" />

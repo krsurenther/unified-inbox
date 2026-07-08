@@ -241,6 +241,14 @@ export class InboxStore {
       );
   }
 
+  /** How many sends a channel has made at/after `sinceIso` (rolling-window cap source). */
+  countSendsSince(channelId: string, sinceIso: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM send_audit WHERE channel_id = ? AND sent_at >= ?`)
+      .get(channelId, sinceIso) as { n: number };
+    return Number(row.n);
+  }
+
   listSendAudit(threadId: string): SendAuditRow[] {
     return (
       this.db

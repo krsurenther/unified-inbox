@@ -195,6 +195,11 @@ export class InboxService {
     return channelConfig(this.config, channelId).autoSend === true;
   }
 
+  /** Sends a channel has made at/after `sinceIso` — feeds the WhatsApp anti-ban rolling cap. */
+  sendCountSince(channelId: string, sinceIso: string): number {
+    return this.store.countSendsSince(channelId, sinceIso);
+  }
+
   // --- reads for UI / MCP --------------------------------------------------
 
   listThreads(): ThreadView[] {

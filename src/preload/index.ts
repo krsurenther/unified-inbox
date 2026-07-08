@@ -17,6 +17,9 @@ const api: InboxApi = {
     ipcRenderer.on('wa:update', listener);
     return () => ipcRenderer.removeListener('wa:update', listener);
   },
+
+  whatsappGuard: () => ipcRenderer.invoke('wa:guardStatus'),
+  setWhatsappKill: (on) => ipcRenderer.invoke('wa:setKill', on),
 };
 
 contextBridge.exposeInMainWorld('inbox', api);

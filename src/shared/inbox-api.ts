@@ -1,4 +1,7 @@
 import type { Draft, Message, ThreadView } from '../core/types';
+import type { WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
+
+export type { WaGuardStatus, WaNumberSendStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 
 export type WaState = 'idle' | 'connecting' | 'qr' | 'ready' | 'disconnected' | 'error';
 
@@ -31,4 +34,10 @@ export interface InboxApi {
   disconnectWhatsApp(id: string): Promise<void>;
   /** Subscribe to WhatsApp connection/QR updates. Returns an unsubscribe fn. */
   onWaUpdate(cb: (states: WaNumberState[]) => void): () => void;
+
+  // WhatsApp anti-ban guard (Phase 5): per-number send caps + global kill switch.
+  /** Per-number send counts / ban-risk + the kill-switch state. */
+  whatsappGuard(): Promise<WaGuardStatus>;
+  /** Engage/release the kill switch that pauses ALL WhatsApp sending. Returns fresh status. */
+  setWhatsappKill(on: boolean): Promise<WaGuardStatus>;
 }

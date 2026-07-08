@@ -13,7 +13,7 @@ This is a deliberate low-cost workaround until official channel APIs are afforda
 | 2 | Real adapters: WhatsApp ×3 ✅, Duoke ✅ (send too), webstore ⬜ | 🚧 2a/2b done, 2c left |
 | 3 | Unified inbox UI (cross-channel list, history, approve/edit/send, channel tabs) | ✅ core done |
 | 4 | AI reply layer (Ollama, per-channel, swappable) + MCP server | ✅ done |
-| 5 | Hardening: anti-ban pacing/caps/kill-switch, persistence, swap-to-official docs | ⬜ |
+| 5 | Hardening: WhatsApp anti-ban (pacing/caps/kill-switch) ✅, persistence ⬜, swap-to-official docs ⬜ | 🚧 anti-ban done |
 
 ## Architecture (one-liner)
 
@@ -59,6 +59,24 @@ Then point a client at it (Claude Desktop `claude_desktop_config.json`, etc.):
 ```
 
 Tools: `list_threads`, `get_thread`, `draft_reply`.
+
+## WhatsApp anti-ban guard
+
+The WhatsApp path is an unofficial workaround (WhatsApp Web), so every outbound
+reply passes through a `SendPolicy` before it leaves:
+
+- **Per-number daily cap** — max sends per number in a rolling 24h window (default
+  200, `whatsapp.dailyCap` in config), counted from the send-audit log so it
+  survives restarts. At the cap, the send is refused with a clear reason.
+- **Human-like pacing** — a randomized, length-scaled "typing" delay before each
+  send, so replies never fire back-to-back like a bot.
+- **Global kill switch** — one toggle in the WhatsApp panel instantly pauses *all*
+  outbound WhatsApp sending; reads/drafts keep working.
+- **Surfaced ban risk** — each number shows `sent/cap · low|medium|high risk`, and
+  the risk band drives the header indicator.
+
+The guard is a swappable seam: replace `WhatsAppAdapter` with an official-API
+adapter later and the caps/pacing/kill-switch policy still applies unchanged.
 
 ## Principles
 

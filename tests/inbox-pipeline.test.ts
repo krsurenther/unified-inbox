@@ -92,4 +92,16 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     const threadId = service.listThreads()[0]!.thread.id;
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
+
+  it('exposes a rolling send count per channel (feeds the WhatsApp anti-ban cap)', async () => {
+    const { service, fake } = makeService();
+    await service.start();
+    await fake.inject({ threadKey: 't1', from: { externalId: 'cust-1', name: 'Aisha' }, body: 'hi' });
+    const threadId = service.listThreads()[0]!.thread.id;
+    await service.approveAndSend(threadId, { body: 'On its way!', approvedBy: 'human:ui' });
+
+    expect(service.sendCountSince('fake:demo', '1970-01-01T00:00:00.000Z')).toBe(1);
+    expect(service.sendCountSince('fake:demo', '2999-01-01T00:00:00.000Z')).toBe(0);
+    expect(service.sendCountSince('whatsapp:num-1', '1970-01-01T00:00:00.000Z')).toBe(0);
+  });
 });

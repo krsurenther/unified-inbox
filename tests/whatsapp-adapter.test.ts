@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WhatsAppAdapter } from '../src/core/channels/whatsapp/WhatsAppAdapter';
+import { SendPolicy } from '../src/core/channels/whatsapp/SendPolicy';
 import type { WaChat, WaClient, WaMessage } from '../src/core/channels/whatsapp/wa-types';
 
 function makeMock() {
@@ -130,6 +131,48 @@ describe('WhatsAppAdapter', () => {
     await a.logout();
     expect(flags.loggedOut).toBe(true);
     expect(a.connected).toBe(false);
+  });
+
+  it('refuses to send when the send policy blocks it (cap/kill), and dispatches nothing', async () => {
+    const { client, sent } = makeMock();
+    const policy = new SendPolicy({ dailyCap: 0, countRecentSends: () => 0 }); // cap 0 → always blocked
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' }, sendPolicy: policy });
+    a.onMessage(() => {});
+    await a.start();
+    client.emit('ready');
+    await expect(a.send({ threadKey: '60123456789@c.us', body: 'hi' })).rejects.toThrow(/cap|paused|kill/i);
+    expect(sent).toEqual([]);
+  });
+
+  it('paces the send through the policy before dispatching', async () => {
+    const { client, sent } = makeMock();
+    let slept = -1;
+    const policy = new SendPolicy({
+      dailyCap: 100,
+      countRecentSends: () => 0,
+      minDelayMs: 1234,
+      perCharMs: 0,
+      jitterMs: 0,
+      random: () => 0,
+      sleep: async (ms) => { slept = ms; },
+    });
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' }, sendPolicy: policy });
+    a.onMessage(() => {});
+    await a.start();
+    client.emit('ready');
+    await a.send({ threadKey: '60123456789@c.us', body: 'On its way!' });
+    expect(slept).toBe(1234); // paced before the actual send
+    expect(sent).toHaveLength(1);
+  });
+
+  it('health() surfaces ban risk from the send policy', async () => {
+    const { client } = makeMock();
+    const policy = new SendPolicy({ dailyCap: 100, countRecentSends: () => 90 }); // 90% of cap → high
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' }, sendPolicy: policy });
+    a.onMessage(() => {});
+    await a.start();
+    client.emit('ready');
+    expect((await a.health()).banRisk).toBe('high');
   });
 
   it('exposes the QR string for linking', async () => {

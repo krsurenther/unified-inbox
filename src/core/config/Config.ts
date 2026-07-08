@@ -30,7 +30,13 @@ export const AppConfigSchema = z.object({
     ),
   defaultProvider: z.string().default('echo'),
   channels: z.record(z.string(), ChannelConfigSchema).default({}),
-  whatsapp: z.object({ numbers: z.array(WhatsAppNumberSchema).default([]) }).default({ numbers: [] }),
+  whatsapp: z
+    .object({
+      numbers: z.array(WhatsAppNumberSchema).default([]),
+      /** Anti-ban: max sends per number per rolling 24h. Conservative default for aged numbers. */
+      dailyCap: z.number().int().positive().default(200),
+    })
+    .default({ numbers: [], dailyCap: 200 }),
 });
 
 export type ChannelConfig = z.infer<typeof ChannelConfigSchema>;

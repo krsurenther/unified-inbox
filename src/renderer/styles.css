@@ -495,3 +495,84 @@ textarea:focus {
   border-color: #ef4444;
   color: #ef4444;
 }
+
+/* WhatsApp anti-ban guard: kill switch + per-number quota / risk */
+.btn.danger {
+  background: #ef4444;
+  border-color: transparent;
+  color: #fff;
+}
+.btn.danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: transparent;
+}
+.wa-kill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--panel-2);
+}
+.wa-kill.on {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+.wa-kill-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wa-kill-title {
+  font-weight: 650;
+  font-size: 13px;
+}
+.wa-kill-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  max-width: 250px;
+}
+.wa-kill .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wa-quota {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+  font-size: 11.5px;
+}
+.wa-quota-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wa-quota-risk {
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 650;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.wa-quota.risk-low .wa-quota-risk {
+  color: var(--good);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+.wa-quota.risk-medium .wa-quota-risk {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+.wa-quota.risk-high .wa-quota-risk {
+  color: #fff;
+  background: #ef4444;
+  border-color: transparent;
+}

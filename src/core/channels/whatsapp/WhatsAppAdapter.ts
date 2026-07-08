@@ -9,6 +9,7 @@ import type {
 } from '../ChannelAdapter';
 import type { ChannelRef } from '../../types';
 import type { WaClient, WaMessage } from './wa-types';
+import type { SendPolicy } from './SendPolicy';
 import { isSystemWaMessage, normalizeWaMessage, stripWaId, waChatToDescriptor } from './normalize';
 
 export interface WhatsAppNumber {
@@ -29,6 +30,8 @@ export interface WhatsAppAdapterOptions {
   onReady?: () => void;
   /** Called when the linked session drops. */
   onDisconnected?: (reason: string) => void;
+  /** Anti-ban guard (Phase 5): per-number cap, human-like pacing, kill switch. Optional. */
+  sendPolicy?: SendPolicy;
 }
 
 /**
@@ -46,6 +49,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private readonly onQrCb?: (qr: string) => void;
   private readonly onReadyCb?: () => void;
   private readonly onDisconnectedCb?: (reason: string) => void;
+  private readonly sendPolicy?: SendPolicy;
   private handler?: (m: InboundMessage) => void | Promise<void>;
   private ready = false;
   private lastQr?: string;
@@ -58,6 +62,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.onQrCb = opts.onQr;
     this.onReadyCb = opts.onReady;
     this.onDisconnectedCb = opts.onDisconnected;
+    this.sendPolicy = opts.sendPolicy;
     this.channel = { id: `whatsapp:${opts.number.id}`, kind: 'whatsapp', label: opts.number.label };
   }
 
@@ -146,14 +151,22 @@ export class WhatsAppAdapter implements ChannelAdapter {
     if (!this.ready) {
       throw new Error(`WhatsApp '${this.number.label}' is not connected (scan the QR to link it).`);
     }
+    // Anti-ban gate: refuse if the number is capped or the kill switch is on, then
+    // pace the send (human-like, randomized delay) before it actually goes out.
+    if (this.sendPolicy) {
+      const decision = await this.sendPolicy.check();
+      if (!decision.allowed) throw new Error(decision.reason ?? 'Sending is paused for this number.');
+      await this.sendPolicy.pace(msg.body);
+    }
     const sent = await this.client.sendMessage(msg.threadKey, msg.body);
     return { channelMessageId: sent.id._serialized, sentAt: new Date().toISOString() };
   }
 
   async health(): Promise<ChannelHealth> {
+    const status = this.sendPolicy ? await this.sendPolicy.check() : undefined;
     return {
       connected: this.ready,
-      banRisk: 'low', // reply-only + aged numbers; refined in Phase 5
+      banRisk: status?.risk ?? 'low', // reply-only + aged numbers keep this low until the cap nears
       detail: this.ready ? undefined : this.lastQr ? 'awaiting QR scan' : 'connecting',
     };
   }
