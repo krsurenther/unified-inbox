@@ -197,6 +197,11 @@ export class InboxService {
     const adapter = this.channels.get(view.channel.id);
     if (!adapter) throw new Error(`no adapter registered for channel '${view.channel.id}'`);
 
+    // Capture the draft being approved BEFORE the (slow, paced) send — an inbound
+    // arriving mid-send would otherwise create a fresh draft that we'd wrongly
+    // flag 'sent' and mis-attribute in the audit.
+    const draft = this.store.getLatestDraft(threadId);
+
     const out: OutboundMessage = { threadKey: view.thread.threadKey, body: opts.body };
     const res = await adapter.send(out);
 
@@ -207,7 +212,6 @@ export class InboxService {
       createdAt: res.sentAt,
     });
 
-    const draft = this.store.getLatestDraft(threadId);
     if (draft) this.store.setDraftStatus(draft.id, 'sent');
 
     this.store.recordSendAudit({

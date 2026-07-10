@@ -93,6 +93,34 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('a draft created DURING the send is not marked sent (audit points at the approved draft)', async () => {
+    const { service, store } = makeService();
+    await service.start();
+    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'Aisha' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1' });
+    const threadId = service.listThreads()[0]!.thread.id;
+    const approved = store.getLatestDraft(threadId)!;
+
+    // Replace 'fake:demo' with an adapter whose send() simulates a concurrent inbound
+    // creating a fresh draft mid-send (registerChannel under the same id replaces it).
+    service.registerChannel({
+      channel: { id: 'fake:demo', kind: 'fake' as const, label: 'Racy' },
+      async start() {}, async stop() {}, onMessage() {},
+      async listThreads() { return []; }, async getHistory() { return []; },
+      async health() { return { connected: true, banRisk: 'low' as const }; },
+      send: async () => {
+        store.saveDraft({ threadId, body: 'sneaky mid-send draft' });
+        return { channelMessageId: 'x1', sentAt: new Date().toISOString() };
+      },
+    });
+
+    await service.approveAndSend(threadId, { body: approved.body, approvedBy: 'human:ui' });
+
+    expect(store.listSendAudit(threadId)[0]!.draftId).toBe(approved.id);
+    const latest = store.getLatestDraft(threadId)!;
+    expect(latest.body).toBe('sneaky mid-send draft');
+    expect(latest.status).toBe('suggested'); // the mid-send draft was NOT flipped to sent
+  });
+
   it('fires onInbound exactly once per NEW inbound message (not on duplicates)', async () => {
     const events: Array<{ threadId: string; customerName: string; body: string }> = [];
     const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
