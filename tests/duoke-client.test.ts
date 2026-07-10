@@ -34,6 +34,20 @@ describe('DuokeClient', () => {
     expect(JSON.parse(String(calls[0]!.init!.body)).shopIdList).toEqual(['s1']);
   });
 
+  it('gets orders for a conversation and posts the ids order/list needs', async () => {
+    const { fn, calls } = mockFetch(() => ({
+      code: 0,
+      data: { list: [{ orderNumber: 'O1', dkOrderStatus: 'Shipped', amount: 100, currency: 'MYR', productList: [{ productName: 'TV', productSku: 'SKU1', quantity: 1, price: 100 }] }] },
+    }));
+    const orders = await new DuokeClient({ token: 't', fetchFn: fn }).getOrders({ shopId: 's1', buyerId: 'b1', conversationId: 'c1', platform: 'shopee' });
+    expect(orders).toHaveLength(1);
+    expect(orders[0]).toMatchObject({ orderId: 'O1', status: 'Shipped', total: 100, currency: 'MYR' });
+    expect(orders[0]!.items[0]).toMatchObject({ name: 'TV', sku: 'SKU1', quantity: 1, price: 100 });
+    expect(calls[0]!.url).toContain('/api/v1/dk/unity/order/list');
+    const body = JSON.parse(String(calls[0]!.init!.body));
+    expect(body).toMatchObject({ shopId: 's1', buyerId: 'b1', conversationId: 'c1', platform: 'shopee' });
+  });
+
   it('gets messages chronological (oldest-first) and sends auth on the request', async () => {
     const { fn, calls } = mockFetch(() => ({
       code: 0,

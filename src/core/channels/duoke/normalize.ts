@@ -113,6 +113,88 @@ export function normalizeDuokeMessage(raw: DuokeRawMessage): NormalizedDuokeMess
   };
 }
 
+// --- orders / products (from POST /api/v1/dk/unity/order/list) ----------------
+
+export interface DuokeRawOrderProduct {
+  productName?: string;
+  productImage?: string;
+  productUrl?: string;
+  productSku?: string;
+  variationSku?: string;
+  variation?: string;
+  quantity?: number;
+  price?: number;
+  originalPrice?: number;
+  currency?: string | null;
+}
+
+export interface DuokeRawOrder {
+  id?: string | number;
+  orderNumber?: string;
+  platform?: string;
+  dkOrderStatus?: string;
+  platformOrderStatus?: string;
+  amount?: number;
+  currency?: string;
+  paymentMethod?: string;
+  platformCreateTime?: number;
+  logistics?: { logisticsServiceName?: string; trackingNumber?: string[]; shippingStatus?: string };
+  productList?: DuokeRawOrderProduct[];
+}
+
+export interface NormalizedDuokeOrderItem {
+  name: string;
+  imageUrl?: string;
+  productUrl?: string;
+  sku?: string;
+  variation?: string;
+  quantity: number;
+  price: number;
+  originalPrice?: number;
+  currency: string;
+}
+
+export interface NormalizedDuokeOrder {
+  orderId: string;
+  status?: string;
+  statusCode?: string;
+  total: number;
+  currency: string;
+  paymentMethod?: string;
+  placedAt?: string; // ISO
+  trackingNumber?: string;
+  logisticsService?: string;
+  logisticsStatus?: string;
+  items: NormalizedDuokeOrderItem[];
+}
+
+export function normalizeOrder(raw: DuokeRawOrder): NormalizedDuokeOrder {
+  const currency = raw.currency ?? 'MYR';
+  return {
+    orderId: String(raw.orderNumber ?? raw.id ?? ''),
+    status: raw.dkOrderStatus,
+    statusCode: raw.platformOrderStatus,
+    total: Number(raw.amount ?? 0),
+    currency,
+    paymentMethod: raw.paymentMethod,
+    placedAt: raw.platformCreateTime ? new Date(raw.platformCreateTime).toISOString() : undefined,
+    trackingNumber: raw.logistics?.trackingNumber?.find((t) => t && t.length > 0),
+    logisticsService: raw.logistics?.logisticsServiceName,
+    logisticsStatus: raw.logistics?.shippingStatus,
+    items: (raw.productList ?? []).map((p) => ({
+      name: String(p.productName ?? ''),
+      imageUrl: p.productImage ?? undefined,
+      productUrl: p.productUrl ?? undefined,
+      sku: p.productSku ?? p.variationSku ?? undefined,
+      variation: p.variation ?? undefined,
+      quantity: Number(p.quantity ?? 1),
+      price: Number(p.price ?? 0),
+      originalPrice: p.originalPrice != null ? Number(p.originalPrice) : undefined,
+      currency: p.currency ?? currency,
+    })),
+  };
+}
+
 export function normalizeConversation(raw: DuokeRawConversation): NormalizedDuokeConversation {
   return {
     conversationId: raw.conversationId,

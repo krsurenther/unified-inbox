@@ -9,6 +9,7 @@ import type {
 } from '../ChannelAdapter';
 import type { ChannelRef } from '../../types';
 import { DuokeClient, type DuokeShop } from './DuokeClient';
+import type { NormalizedDuokeOrder } from './normalize';
 import type { DuokeSendDriver } from './DuokeSendDriver';
 
 const PLATFORM_LABELS: Record<string, string> = { tiktok: 'TikTok', shopee: 'Shopee', lazada: 'Lazada' };
@@ -110,6 +111,11 @@ export class DuokeAdapter implements ChannelAdapter {
 
   private getRawMessages(conversationId: string) {
     return this.client.getMessages({ shopId: this.shop.id, conversationId, platform: this.shop.platform });
+  }
+
+  /** Orders + products for this conversation's buyer (for the detail-panel order card). */
+  getOrders(conversationId: string, buyerId: string): Promise<NormalizedDuokeOrder[]> {
+    return this.client.getOrders({ shopId: this.shop.id, buyerId, conversationId, platform: this.shop.platform });
   }
 
   async health(): Promise<ChannelHealth> {

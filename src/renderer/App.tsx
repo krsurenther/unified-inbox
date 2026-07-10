@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
-import type { HealthStatus, ProviderInfo, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
+import type { HealthStatus, NormalizedDuokeOrder, ProviderInfo, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
 import { inbox } from './api';
@@ -27,6 +27,7 @@ export function App() {
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [orders, setOrders] = useState<NormalizedDuokeOrder[]>([]);
   const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
 
   const refreshThreads = useCallback(async () => {
@@ -141,6 +142,15 @@ export function App() {
     }, 3000);
     return () => clearInterval(iv);
   }, [selectedId, refreshThreads]);
+
+  // Marketplace order/product card — fetched lazily on thread open (main returns [] for non-Duoke).
+  useEffect(() => {
+    if (!selectedId) { setOrders([]); return; }
+    let cancelled = false;
+    setOrders([]);
+    inbox.threadOrders(selectedId).then((o) => { if (!cancelled) setOrders(o); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   // Opening a thread lands on the newest message.
   useEffect(() => { pinnedRef.current = true; }, [selectedId]);
@@ -402,6 +412,41 @@ export function App() {
                   )}
                 </div>
               </div>
+
+              {orders.length > 0 && (
+                <div className="orders">
+                  {orders.map((o) => (
+                    <div key={o.orderId} className="order-card">
+                      <div className="order-top">
+                        <span className="order-id">#{o.orderId}</span>
+                        {o.status && <span className="order-status">{o.status}</span>}
+                        <span className="order-total">{o.currency} {o.total.toFixed(2)}</span>
+                      </div>
+                      {o.items.map((it, i) => (
+                        <div key={i} className="order-item">
+                          {it.imageUrl && <img className="order-img" src={it.imageUrl} alt="" />}
+                          <div className="order-item-info">
+                            <div className="order-item-name">{it.name}</div>
+                            <div className="order-item-sub">
+                              {it.sku && <span>SKU {it.sku}</span>}
+                              {it.variation && <span> · {it.variation}</span>}
+                              <span> · ×{it.quantity}</span>
+                            </div>
+                          </div>
+                          <div className="order-item-price">{it.currency} {it.price.toFixed(2)}</div>
+                        </div>
+                      ))}
+                      {(o.paymentMethod || o.trackingNumber || o.logisticsStatus) && (
+                        <div className="order-foot">
+                          {o.paymentMethod && <span>{o.paymentMethod}</span>}
+                          {o.trackingNumber && <span>📦 {o.logisticsService ?? ''} {o.trackingNumber}</span>}
+                          {o.logisticsStatus && <span>{o.logisticsStatus}</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="history" ref={historyRef} onScroll={onHistoryScroll}>
                 {history.map((m) => {

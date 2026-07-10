@@ -2,10 +2,13 @@ import { DuokeTokenReader } from './DuokeTokenReader';
 import {
   normalizeConversation,
   normalizeDuokeMessage,
+  normalizeOrder,
   type DuokeRawConversation,
   type DuokeRawMessage,
+  type DuokeRawOrder,
   type NormalizedDuokeConversation,
   type NormalizedDuokeMessage,
+  type NormalizedDuokeOrder,
 } from './normalize';
 
 export interface DuokeShop {
@@ -137,5 +140,28 @@ export class DuokeClient {
     const data = await this.call<{ list?: DuokeRawMessage[] }>(`/api/v1/im/message/list?${q.toString()}`);
     // API returns newest-first; reverse to chronological (oldest-first) for the inbox.
     return (data.list ?? []).map(normalizeDuokeMessage).reverse();
+  }
+
+  /** Orders (+ their products) attached to a buyer's conversation — for the order card. */
+  async getOrders(args: {
+    shopId: string;
+    buyerId: string;
+    conversationId: string;
+    platform: string;
+    pageNo?: number;
+    pageSize?: number;
+  }): Promise<NormalizedDuokeOrder[]> {
+    const data = await this.call<{ list?: DuokeRawOrder[] }>('/api/v1/dk/unity/order/list', {
+      method: 'POST',
+      body: JSON.stringify({
+        shopId: args.shopId,
+        buyerId: args.buyerId,
+        conversationId: args.conversationId,
+        platform: args.platform,
+        pageNo: args.pageNo ?? 1,
+        pageSize: args.pageSize ?? 20,
+      }),
+    });
+    return (data.list ?? []).map(normalizeOrder);
   }
 }

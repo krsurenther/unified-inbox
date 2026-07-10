@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDuokeMessage, normalizeConversation } from '../src/core/channels/duoke/normalize';
+import { normalizeDuokeMessage, normalizeConversation, normalizeOrder } from '../src/core/channels/duoke/normalize';
 
 describe('normalizeDuokeMessage', () => {
   const base = { messageId: 'm1', createdTimestamp: 1777794100000 };
@@ -80,5 +80,48 @@ describe('normalizeConversation', () => {
       latestMessageType: 'text',
     });
     expect(n.lastMessageAt).toBeUndefined();
+  });
+});
+
+describe('normalizeOrder', () => {
+  it('normalizes an order + its products from the order/list payload', () => {
+    const n = normalizeOrder({
+      id: 42,
+      orderNumber: '58212324',
+      platform: 'tiktok',
+      dkOrderStatus: 'Cancelled',
+      platformOrderStatus: '140',
+      amount: 989.1,
+      currency: 'MYR',
+      paymentMethod: 'PayLater',
+      platformCreateTime: 1781777802000,
+      logistics: { logisticsServiceName: 'GDEX', trackingNumber: ['', 'MY37343500185'], shippingStatus: 'To ship' },
+      productList: [
+        { productName: 'Sharp Aquos GH3000X', productImage: 'https://cdn/x.jpg', productUrl: 'https://p/x', productSku: '2TC43GH3000X', variation: '43 INCH', quantity: 1, originalPrice: 1099, price: 989.1, currency: null },
+      ],
+    });
+    expect(n).toMatchObject({
+      orderId: '58212324',
+      status: 'Cancelled',
+      statusCode: '140',
+      total: 989.1,
+      currency: 'MYR',
+      paymentMethod: 'PayLater',
+      trackingNumber: 'MY37343500185', // first non-empty
+      logisticsService: 'GDEX',
+      logisticsStatus: 'To ship',
+    });
+    expect(n.placedAt).toBe(new Date(1781777802000).toISOString());
+    expect(n.items[0]).toEqual({
+      name: 'Sharp Aquos GH3000X',
+      imageUrl: 'https://cdn/x.jpg',
+      productUrl: 'https://p/x',
+      sku: '2TC43GH3000X',
+      variation: '43 INCH',
+      quantity: 1,
+      price: 989.1,
+      originalPrice: 1099,
+      currency: 'MYR', // product currency null → falls back to order currency
+    });
   });
 });

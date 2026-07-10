@@ -2,9 +2,11 @@ import type { Draft, Message, ThreadView } from '../core/types';
 import type { WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 import type { SendEvent } from '../main/SendQueue';
 import type { ChannelHealthRow } from '../core/InboxService';
+import type { NormalizedDuokeOrder } from '../core/channels/duoke/normalize';
 
 export type { SendEvent } from '../main/SendQueue';
 export type { ChannelHealthRow } from '../core/InboxService';
+export type { NormalizedDuokeOrder } from '../core/channels/duoke/normalize';
 
 export interface HealthStatus {
   channels: ChannelHealthRow[];
@@ -42,6 +44,8 @@ export interface InboxApi {
   getHistory(threadId: string): Promise<Message[]>;
   /** Live channel + drafting health, for status banners. */
   health(): Promise<HealthStatus>;
+  /** Orders + products for a marketplace (Duoke) thread — for the detail-panel order card. */
+  threadOrders(threadId: string): Promise<NormalizedDuokeOrder[]>;
   /** The AI models available in the picker (Local / Claude / ChatGPT / Gemini). */
   listProviders(): Promise<ProviderInfo[]>;
   /** Choose which AI drafts replies (persists across restarts). Returns the fresh list. */

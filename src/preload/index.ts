@@ -6,6 +6,7 @@ const api: InboxApi = {
   listThreads: () => ipcRenderer.invoke('inbox:listThreads'),
   getHistory: (threadId) => ipcRenderer.invoke('inbox:getHistory', threadId),
   health: () => ipcRenderer.invoke('inbox:health'),
+  threadOrders: (threadId) => ipcRenderer.invoke('duoke:orders', threadId),
   listProviders: () => ipcRenderer.invoke('providers:list'),
   setProvider: (id) => ipcRenderer.invoke('providers:set', id),
   markRead: (threadId) => ipcRenderer.invoke('inbox:markRead', threadId),

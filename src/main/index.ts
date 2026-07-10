@@ -235,6 +235,18 @@ function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
   ipcMain.handle('inbox:health', async () => ({ channels: await service.channelsHealth(), draft: service.draftHealth() }));
+  ipcMain.handle('duoke:orders', async (_e, threadId: string) => {
+    const view = service.getThreadView(threadId);
+    if (!view || view.channel.kind !== 'duoke') return [];
+    const adapter = duokeAdapters.find((a) => a.channel.id === view.channel.id);
+    if (!adapter) return [];
+    try {
+      return await adapter.getOrders(view.thread.threadKey, view.customer.externalId);
+    } catch (e) {
+      console.error('[duoke] orders:', (e as Error).message);
+      return [];
+    }
+  });
   ipcMain.handle('providers:list', () => providerList());
   ipcMain.handle('providers:set', (_e, id: string) => {
     if (providers[id]) {
