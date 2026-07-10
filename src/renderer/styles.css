@@ -200,6 +200,31 @@ body {
   border-radius: 6px;
   padding: 1px 6px;
 }
+.chan-whatsapp {
+  color: var(--good);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+.chan-duoke {
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.35);
+}
+.who {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.you {
+  color: var(--muted);
+  font-weight: 600;
+}
 .dot-draft {
   font-size: 11px;
   color: var(--good);

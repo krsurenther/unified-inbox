@@ -25,6 +25,14 @@ describe('InboxStore thread status', () => {
     expect(s.getThreadView(t.id)!.thread.status).toBe('open');
   });
 
+  it('last_message_at only moves forward (monotonic), resisting stale/out-of-order updates', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s);
+    s.recordInbound({ threadId: t.id, body: 'new', channelMessageId: 'm1', createdAt: '2027-01-01T00:00:00.000Z' });
+    s.setThreadSummary(t.id, { lastMessageAt: '2026-01-01T00:00:00.000Z' }); // stale channel summary
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2027-01-01T00:00:00.000Z');
+  });
+
   it('exposes the last message direction on the thread view', () => {
     const s = new InboxStore(':memory:');
     const t = seedThread(s);

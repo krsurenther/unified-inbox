@@ -135,9 +135,10 @@ export class InboxStore {
 
     const inserted = Number(res.changes) > 0;
     if (inserted) {
-      // A new customer message reopens a done thread and bumps unread.
+      // A new customer message reopens a done thread and bumps unread. last_message_at
+      // is monotonic (MAX) so a late/out-of-order delivery can't sink the thread.
       this.db
-        .prepare(`UPDATE threads SET last_message_at = ?, unread = unread + 1, status = 'open' WHERE id = ?`)
+        .prepare(`UPDATE threads SET last_message_at = MAX(last_message_at, ?), unread = unread + 1, status = 'open' WHERE id = ?`)
         .run(createdAt, p.threadId);
     }
     return { inserted };
@@ -195,7 +196,8 @@ export class InboxStore {
   /** Set a thread's authoritative unread / last-activity from the channel. */
   setThreadSummary(threadId: string, p: { unread?: number; lastMessageAt?: string }): void {
     if (p.unread != null) this.db.prepare(`UPDATE threads SET unread = ? WHERE id = ?`).run(p.unread, threadId);
-    if (p.lastMessageAt) this.db.prepare(`UPDATE threads SET last_message_at = ? WHERE id = ?`).run(p.lastMessageAt, threadId);
+    if (p.lastMessageAt)
+      this.db.prepare(`UPDATE threads SET last_message_at = MAX(last_message_at, ?) WHERE id = ?`).run(p.lastMessageAt, threadId);
   }
 
   // --- drafts --------------------------------------------------------------

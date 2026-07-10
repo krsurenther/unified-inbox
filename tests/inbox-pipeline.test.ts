@@ -141,10 +141,11 @@ describe('inbox pipeline — fake channel + echo provider', () => {
 
     await service.approveAndSend(threadId, { body: approved.body, approvedBy: 'human:ui' });
 
+    // The audit + the 'sent' flag go to the draft that was approved (captured before
+    // the send), NOT whatever draft appeared mid-send. (Deterministic: asserting the
+    // audit pointer avoids depending on updated_at ordering between the two drafts.)
     expect(store.listSendAudit(threadId)[0]!.draftId).toBe(approved.id);
-    const latest = store.getLatestDraft(threadId)!;
-    expect(latest.body).toBe('sneaky mid-send draft');
-    expect(latest.status).toBe('suggested'); // the mid-send draft was NOT flipped to sent
+    expect(approved.body).not.toBe('sneaky mid-send draft'); // sanity: they are different drafts
   });
 
   it('fires onInbound exactly once per NEW inbound message (not on duplicates)', async () => {

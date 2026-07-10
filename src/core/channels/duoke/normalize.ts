@@ -41,7 +41,7 @@ export interface NormalizedDuokeConversation {
   platform: string;
   shopId: string;
   unread: number;
-  lastMessageAt: string;
+  lastMessageAt?: string;
   preview: string;
 }
 
@@ -121,7 +121,8 @@ export function normalizeConversation(raw: DuokeRawConversation): NormalizedDuok
     platform: raw.platform,
     shopId: raw.shopId,
     unread: raw.unReadCount ?? 0,
-    lastMessageAt: new Date(raw.lastMessageTimestamp ?? 0).toISOString(),
+    // No timestamp → undefined (NOT epoch 0 / 1970, which would sink the thread).
+    lastMessageAt: raw.lastMessageTimestamp ? new Date(raw.lastMessageTimestamp).toISOString() : undefined,
     preview: bodyOf(raw.latestMessageType ?? 'text', parseContent(raw.latestMessageContent)),
   };
 }

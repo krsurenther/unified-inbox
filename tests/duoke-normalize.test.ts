@@ -68,4 +68,17 @@ describe('normalizeConversation', () => {
     expect(n.preview).toBe('hello there');
     expect(n.lastMessageAt).toBe(new Date(1781777802000).toISOString());
   });
+
+  it('leaves lastMessageAt undefined when the source timestamp is missing (no 1970 sink)', () => {
+    const n = normalizeConversation({
+      conversationId: 'c2',
+      buyerId: 'b2',
+      platform: 'shopee',
+      shopId: 's1',
+      unReadCount: 0,
+      latestMessageContent: '{"text":"hi"}',
+      latestMessageType: 'text',
+    });
+    expect(n.lastMessageAt).toBeUndefined();
+  });
 });

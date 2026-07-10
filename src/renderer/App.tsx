@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
 import type { WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
+import { formatRelative } from './time';
 import { inbox } from './api';
 
 type Filter = 'needs' | 'all' | 'marketplace' | 'whatsapp' | 'done';
@@ -295,11 +296,15 @@ export function App() {
             >
               <div className="thread-top">
                 <span className="who">{t.customer.name ?? t.customer.externalId}</span>
+                <span className="thread-time">{formatRelative(t.thread.lastMessageAt)}</span>
                 {t.thread.unread > 0 && <span className="badge">{t.thread.unread}</span>}
               </div>
-              <div className="preview">{t.lastMessagePreview ?? '—'}</div>
+              <div className="preview">
+                {t.lastMessageDirection === 'outbound' && <span className="you">You: </span>}
+                {t.lastMessagePreview ?? '—'}
+              </div>
               <div className="thread-foot">
-                <span className="chan">{t.channel.label}</span>
+                <span className={`chan chan-${t.channel.kind}`}>{t.channel.label}</span>
                 {t.draft && t.draft.status !== 'sent' && <span className="dot-draft">draft ready</span>}
               </div>
             </button>
