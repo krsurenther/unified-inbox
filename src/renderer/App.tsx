@@ -453,14 +453,19 @@ export function App() {
                 {history.map((m) => {
                   const media = (m.meta as { media?: MessageMedia } | undefined)?.media;
                   const src = media?.dataUri ?? media?.url;
+                  // kind may be absent on media stored before it existed — infer from mimetype.
+                  const mime = media?.mimetype ?? '';
+                  const kind =
+                    media?.kind ??
+                    (mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : media ? 'image' : undefined);
                   const isPlaceholder = /\[[a-z ]+\]$/i.test(m.body.trim()); // "[image]", "[video]", "🖼️ [image]", …
                   return (
                     <div key={m.id} className={`msg ${m.direction}`}>
                       <div className="bubble">
-                        {media?.kind === 'image' && src && <img className="msg-img" src={src} alt="attachment" />}
-                        {media?.kind === 'video' && src && <video className="msg-video" src={src} controls preload="metadata" />}
-                        {media?.kind === 'audio' && src && <audio className="msg-audio" src={src} controls preload="metadata" />}
-                        {media?.kind === 'file' && <span className="msg-file">📎 {media.filename ?? 'attachment'}</span>}
+                        {kind === 'image' && src && <img className="msg-img" src={src} alt="attachment" />}
+                        {kind === 'video' && src && <video className="msg-video" src={src} controls preload="metadata" />}
+                        {kind === 'audio' && src && <audio className="msg-audio" src={src} controls preload="metadata" />}
+                        {kind === 'file' && <span className="msg-file">📎 {media?.filename ?? 'attachment'}</span>}
                         {m.body && !(media && isPlaceholder) && <div className="bubble-text">{m.body}</div>}
                       </div>
                       <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
