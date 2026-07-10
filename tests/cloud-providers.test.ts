@@ -1,6 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { ClaudeProvider, OpenAiProvider, GeminiProvider } from '../src/core/llm/cloud';
+import { McpClient } from '../src/core/llm/mcp/McpClient';
 import type { DraftRequest } from '../src/core/llm/LLMProvider';
+
+/** A mock MCP server (one tool that returns stock text) for the tool-loop tests. */
+function mcpClientFor() {
+  const fn = (async (_u: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { id?: number; method: string };
+    if (body.id == null) return { ok: true, status: 202, headers: new Headers(), text: async () => '' } as Response;
+    const result =
+      body.method === 'tools/list'
+        ? { tools: [{ name: 'stock_levels', description: 'Live stock', inputSchema: { type: 'object', properties: { sku: { type: 'string' } }, additionalProperties: false } }] }
+        : body.method === 'tools/call'
+          ? { content: [{ type: 'text', text: '2 units at Temerloh' }] }
+          : {};
+    return { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), text: async () => JSON.stringify({ jsonrpc: '2.0', id: body.id, result }) } as Response;
+  }) as unknown as typeof fetch;
+  return new McpClient({ url: 'https://hub/mcp', token: 't', fetchFn: fn });
+}
 
 const req: DraftRequest = {
   thread: { id: 't1', channelId: 'whatsapp:num-1', channelKind: 'whatsapp', customerName: 'Aisha' },
@@ -101,5 +118,49 @@ describe('GeminiProvider', () => {
   it('throws when no API key', async () => {
     const { fn } = mockJson({});
     await expect(new GeminiProvider({ apiKey: '', fetchFn: fn }).draftReply(req)).rejects.toThrow(/GEMINI_API_KEY/i);
+  });
+});
+
+describe('MCP tool loop (non-Claude providers)', () => {
+  it('Gemini calls a Hub tool, then answers from the tool result', async () => {
+    let gen = 0;
+    const calls: Array<Record<string, unknown>> = [];
+    const llm = (async (_u: string | URL, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)));
+      gen += 1;
+      const parts = gen === 1 ? [{ functionCall: { name: 'stock_levels', args: { sku: 'CU8100' } } }] : [{ text: 'ada 2 unit kat Temerloh 👍' }];
+      return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts } }] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    const res = await new GeminiProvider({ apiKey: 'g', fetchFn: llm, mcpClient: mcpClientFor() }).draftReply(req);
+    expect(res.text).toBe('ada 2 unit kat Temerloh 👍');
+    // 1st call declared the tool (schema stripped of additionalProperties for Gemini)
+    const decl = (calls[0]!.tools as Array<{ functionDeclarations: Array<{ name: string; parameters: Record<string, unknown> }> }>)[0]!.functionDeclarations[0]!;
+    expect(decl.name).toBe('stock_levels');
+    expect(decl.parameters).not.toHaveProperty('additionalProperties');
+    // 2nd call carried the functionResponse turn back to the model
+    const contents = calls[1]!.contents as Array<{ parts?: Array<{ functionResponse?: { name: string; response: { result: string } } }> }>;
+    const fr = contents.flatMap((c) => c.parts ?? []).find((p) => p.functionResponse);
+    expect(fr?.functionResponse?.response.result).toBe('2 units at Temerloh');
+  });
+
+  it('OpenAI calls a Hub tool, then answers from the tool result', async () => {
+    let turn = 0;
+    const calls: Array<Record<string, unknown>> = [];
+    const llm = (async (_u: string | URL, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)));
+      turn += 1;
+      const message =
+        turn === 1
+          ? { tool_calls: [{ id: 'call_1', function: { name: 'stock_levels', arguments: '{"sku":"CU8100"}' } }] }
+          : { content: 'In stock — 2 units at Temerloh.' };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message }] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    const res = await new OpenAiProvider({ apiKey: 'sk', fetchFn: llm, mcpClient: mcpClientFor() }).draftReply(req);
+    expect(res.text).toBe('In stock — 2 units at Temerloh.');
+    const secondMsgs = calls[1]!.messages as Array<{ role: string; tool_call_id?: string; content?: string }>;
+    const toolMsg = secondMsgs.find((m) => m.role === 'tool');
+    expect(toolMsg).toMatchObject({ tool_call_id: 'call_1', content: '2 units at Temerloh' });
   });
 });

@@ -714,8 +714,8 @@ export function App() {
             <div className="settings-section-title">Hub tools (MCP) {mcpUrl && mcpHasToken ? <span className="wa-badge ready">connected ✓</span> : null}</div>
             <p className="wa-sub">
               Let the AI look up live stock, pricing, order and repair status from your Kronoshop Hub while it
-              drafts. Paste your Hub MCP URL and a service token. Works with <strong>Claude</strong> only — pick
-              Claude as the AI to use it. Stored locally; the token is never shown again.
+              drafts. Paste your Hub MCP URL and a service token. Works with <strong>every AI</strong> — Claude,
+              ChatGPT, Gemini, and tool-capable local (Ollama) models. Stored locally; the token is never shown again.
             </p>
             <div className="prompt-editor">
               <input

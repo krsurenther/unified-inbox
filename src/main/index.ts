@@ -14,6 +14,7 @@ import type { LLMProvider } from '../core/llm/LLMProvider';
 import { EchoProvider } from '../core/llm/EchoProvider';
 import { OllamaProvider } from '../core/llm/OllamaProvider';
 import { ClaudeProvider, OpenAiProvider, GeminiProvider } from '../core/llm/cloud';
+import { McpClient } from '../core/llm/mcp/McpClient';
 import { FakeAdapter } from '../core/channels/FakeAdapter';
 import { DuokeClient } from '../core/channels/duoke/DuokeClient';
 import { createDuokeAdapters, type DuokeAdapter } from '../core/channels/duoke/DuokeAdapter';
@@ -90,15 +91,18 @@ const CONFIG_DEFAULTS = {
 /** Build a provider with its API key from config (in-app) falling back to env vars. */
 function makeProvider(id: string): LLMProvider {
   const key = config.apiKeys?.[id] || undefined; // '' → undefined so env can still supply it
+  // One Hub MCP client per build for the providers that run the tool loop app-side.
+  const hub = config.mcp?.url ? new McpClient({ url: config.mcp.url, token: config.mcp.token || undefined }) : undefined;
   switch (id) {
     case 'ollama':
-      return new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL });
+      return new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL, mcpClient: hub });
     case 'claude':
+      // Claude uses Anthropic's native connector (server-side loop), not the app-side client.
       return new ClaudeProvider({ apiKey: key, mcp: config.mcp?.url ? config.mcp : undefined });
     case 'openai':
-      return new OpenAiProvider({ apiKey: key });
+      return new OpenAiProvider({ apiKey: key, mcpClient: hub });
     case 'gemini':
-      return new GeminiProvider({ apiKey: key });
+      return new GeminiProvider({ apiKey: key, mcpClient: hub });
     default:
       return new EchoProvider();
   }
@@ -284,7 +288,7 @@ function registerIpc(): void {
     const t = !u ? '' : token.trim() || (config.mcp?.token ?? '');
     config.mcp = { url: u, token: t };
     persistConfig();
-    providers.claude = makeProvider('claude'); // rebuild so the connector applies immediately
+    for (const id of ['ollama', 'claude', 'openai', 'gemini']) providers[id] = makeProvider(id); // apply to every provider immediately
     return { url: config.mcp.url, hasToken: !!config.mcp.token };
   });
   ipcMain.handle('prompts:get', () => ({ systemPrompt: config.systemPrompt, providerPrompts: config.providerPrompts ?? {} }));
