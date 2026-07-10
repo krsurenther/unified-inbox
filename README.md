@@ -20,7 +20,7 @@ This is a deliberate low-cost workaround until official channel APIs are afforda
 | Round | Scope | State |
 |---|---|---|
 | 1 | Data safety & awareness: busy_timeout + read-only MCP, notifications + badge, draft-race fix, Ollama timeout, clean shutdown, persistent kill switch, status/empty filters, disconnect-purge | ✅ done |
-| 2 | Triage loop: read/Done/needs-reply, durable edits, send queue + pacing UI, health banners, WA reconnect | ⬜ |
+| 2 | Triage loop: read/Done/needs-reply, durable edits, scroll, list timestamps/colors, send queue + pacing UI, health banners, WA reconnect, mute | ✅ done |
 | 3 | Config wiring, Duoke send hardening, burst/hours caps, draft quality | ⬜ |
 | 4 | Packaging (.app), push-driven UI, migrations, keyboard, test coverage | ⬜ |
 
