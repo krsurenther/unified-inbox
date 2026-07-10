@@ -29,6 +29,9 @@ let duokeClient: DuokeClient | undefined;
 let duokeSendDriver: DuokeSendDriver | undefined;
 const duokeChannelIds: string[] = [];
 const duokeAdapters: DuokeAdapter[] = [];
+let duokeBooting = false;
+let duokeTick = false;
+let syncTimer: ReturnType<typeof setInterval> | undefined;
 
 // Seed data so the inbox demonstrates the pipeline on first launch.
 const DEMO_INBOUND = [
@@ -92,13 +95,14 @@ async function bootCore(): Promise<void> {
  * window shows immediately; marketplace threads stream in as they sync.
  */
 async function bootDuoke(): Promise<void> {
-  if (duokeChannelIds.length) return; // already connected
-  duokeClient = new DuokeClient();
-  if (!duokeClient.hasToken()) {
-    console.log('[duoke] not logged in (no token) — skipping marketplace channels');
-    return;
-  }
+  if (duokeBooting || duokeChannelIds.length) return; // already booting / connected
+  duokeBooting = true;
   try {
+    duokeClient = new DuokeClient();
+    if (!duokeClient.hasToken()) {
+      console.log('[duoke] not logged in (no token) — skipping marketplace channels');
+      return;
+    }
     const adapters = await createDuokeAdapters(duokeClient, { pageSize: 10 });
     for (const a of adapters) {
       service.registerChannel(a);
@@ -110,6 +114,8 @@ async function bootDuoke(): Promise<void> {
     await ensureDuokeSend();
   } catch (e) {
     console.error('[duoke] setup failed:', (e as Error).message);
+  } finally {
+    duokeBooting = false;
   }
 }
 
@@ -231,13 +237,13 @@ app.whenReady().then(async () => {
   waManager.autoStartLinked();
   // Connect Duoke in the background, then keep it fresh.
   void bootDuoke();
-  setInterval(() => {
-    if (duokeChannelIds.length) {
-      void syncDuoke();
-      void ensureDuokeSend(); // self-heal send once Duoke's debug port is up
-    } else {
-      void bootDuoke(); // self-heal after a transient network blip / late login
-    }
+  syncTimer = setInterval(() => {
+    if (duokeTick) return; // single-flight: a slow sync must not stack another tick
+    duokeTick = true;
+    const work = duokeChannelIds.length
+      ? syncDuoke().then(() => ensureDuokeSend()) // self-heal send once the debug port is up
+      : bootDuoke(); // self-heal after a transient blip / late login
+    void work.catch(() => {}).finally(() => { duokeTick = false; });
   }, 60_000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
