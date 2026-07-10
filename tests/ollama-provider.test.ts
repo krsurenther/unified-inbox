@@ -45,4 +45,15 @@ describe('OllamaProvider', () => {
     const { fn } = mockFetch({ message: { role: 'assistant', content: '' } });
     await expect(new OllamaProvider({ model: 'gemma3:4b', fetchFn: fn }).draftReply(req)).rejects.toThrow(/empty|no content/i);
   });
+
+  it('aborts a hung request after timeoutMs', async () => {
+    // A fetch that never resolves on its own — only the abort signal ends it.
+    const hung = ((_url: string | URL, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject((init.signal as AbortSignal).reason));
+      })) as unknown as typeof fetch;
+    await expect(
+      new OllamaProvider({ model: 'gemma3:4b', fetchFn: hung, timeoutMs: 25 }).draftReply(req),
+    ).rejects.toThrow(/abort|timed?\s?out/i);
+  });
 });

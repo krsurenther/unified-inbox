@@ -5,6 +5,8 @@ export interface OllamaProviderOptions {
   model?: string; // default 'gemma3:4b'
   fetchFn?: typeof fetch;
   temperature?: number;
+  /** Abort a request that hasn't responded in this many ms (default 30_000). */
+  timeoutMs?: number;
 }
 
 const CHANNEL_LABEL: Record<string, string> = {
@@ -26,12 +28,14 @@ export class OllamaProvider implements LLMProvider {
   private readonly model: string;
   private readonly fetchFn: typeof fetch;
   private readonly temperature: number;
+  private readonly timeoutMs: number;
 
   constructor(opts: OllamaProviderOptions = {}) {
     this.base = (opts.baseUrl ?? 'http://localhost:11434').replace(/\/$/, '');
     this.model = opts.model ?? 'gemma3:4b';
     this.fetchFn = opts.fetchFn ?? fetch;
     this.temperature = opts.temperature ?? 0.5;
+    this.timeoutMs = opts.timeoutMs ?? 30_000;
   }
 
   async draftReply(req: DraftRequest): Promise<DraftResult> {
@@ -50,6 +54,7 @@ export class OllamaProvider implements LLMProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: this.model, messages, stream: false, options: { temperature: this.temperature } }),
+      signal: AbortSignal.timeout(this.timeoutMs), // a hung model must not stall syncs forever
     });
     if (!(res as Response).ok && (res as Response).ok !== undefined) {
       throw new Error(`Ollama ${(res as Response).status}: chat request failed`);
