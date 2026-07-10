@@ -11,6 +11,14 @@ export interface HealthStatus {
   draft: { ok: boolean; error?: string };
 }
 
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  /** Whether the provider is usable now (cloud: API key present; local: always). */
+  configured: boolean;
+  active: boolean;
+}
+
 export type { WaGuardStatus, WaNumberSendStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 
 export type WaState = 'idle' | 'connecting' | 'qr' | 'ready' | 'disconnected' | 'error';
@@ -34,6 +42,10 @@ export interface InboxApi {
   getHistory(threadId: string): Promise<Message[]>;
   /** Live channel + drafting health, for status banners. */
   health(): Promise<HealthStatus>;
+  /** The AI models available in the picker (Local / Claude / ChatGPT / Gemini). */
+  listProviders(): Promise<ProviderInfo[]>;
+  /** Choose which AI drafts replies (persists across restarts). Returns the fresh list. */
+  setProvider(id: string): Promise<ProviderInfo[]>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */

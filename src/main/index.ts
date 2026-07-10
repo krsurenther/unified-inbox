@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Notification } from 'electron';
 import { setDefaultResultOrder } from 'node:dns';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // app.duoke.com publishes unreachable IPv6 (AAAA) records; Electron's Node hangs
@@ -9,8 +10,10 @@ setDefaultResultOrder('ipv4first');
 import { InboxStore } from '../core/store/InboxStore';
 import { InboxService, type InboundEvent } from '../core/InboxService';
 import { LlmRouter } from '../core/llm/LlmRouter';
+import type { LLMProvider } from '../core/llm/LLMProvider';
 import { EchoProvider } from '../core/llm/EchoProvider';
 import { OllamaProvider } from '../core/llm/OllamaProvider';
+import { ClaudeProvider, OpenAiProvider, GeminiProvider } from '../core/llm/cloud';
 import { FakeAdapter } from '../core/channels/FakeAdapter';
 import { DuokeClient } from '../core/channels/duoke/DuokeClient';
 import { createDuokeAdapters, type DuokeAdapter } from '../core/channels/duoke/DuokeAdapter';
@@ -27,6 +30,16 @@ let simSeq = 0;
 let win: BrowserWindow | undefined;
 let waManager: WhatsAppManager | undefined;
 let sendQueue: SendQueue;
+let configPath: string;
+let providers: Record<string, LLMProvider>;
+
+// The models the user can pick from. echo stays out of the picker (it's a test stub).
+const PROVIDER_META = [
+  { id: 'ollama', label: 'Local (Ollama)' },
+  { id: 'claude', label: 'Claude' },
+  { id: 'openai', label: 'ChatGPT (OpenAI)' },
+  { id: 'gemini', label: 'Gemini' },
+] as const;
 let duokeClient: DuokeClient | undefined;
 let duokeSendDriver: DuokeSendDriver | undefined;
 const duokeChannelIds: string[] = [];
@@ -61,25 +74,58 @@ const SIM_POOL = [
   { name: 'Mei Ling', body: 'Can I self-collect from your store today?' },
 ];
 
-async function bootCore(): Promise<void> {
-  config = AppConfigSchema.parse({
-    defaultProvider: 'ollama',
-    channels: { 'fake:demo': { llm: 'echo', autoSend: false } },
-    whatsapp: {
-      numbers: [
-        { id: 'num-1', label: 'WhatsApp · 1' },
-        { id: 'num-2', label: 'WhatsApp · 2' },
-        { id: 'num-3', label: 'WhatsApp · 3' },
-      ],
-    },
+const CONFIG_DEFAULTS = {
+  defaultProvider: 'ollama',
+  channels: { 'fake:demo': { llm: 'echo', autoSend: false } },
+  whatsapp: {
+    numbers: [
+      { id: 'num-1', label: 'WhatsApp · 1' },
+      { id: 'num-2', label: 'WhatsApp · 2' },
+      { id: 'num-3', label: 'WhatsApp · 3' },
+    ],
+    dailyCap: 200,
+  },
+};
+
+/** The AI picker's rows: id, label, whether a key is present, and which is active. */
+function providerList(): Array<{ id: string; label: string; configured: boolean; active: boolean }> {
+  return PROVIDER_META.map((m) => {
+    const p = providers[m.id];
+    const configured = p && 'configured' in p ? Boolean((p as { configured?: boolean }).configured) : true;
+    return { id: m.id, label: m.label, configured, active: config.defaultProvider === m.id };
   });
+}
+
+/** Persist the live config so provider/label/cap edits survive a restart. */
+function persistConfig(): void {
+  try {
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+  } catch (e) {
+    console.error('[config] save failed:', (e as Error).message);
+  }
+}
+
+async function bootCore(): Promise<void> {
+  // Operator-tunable config lives in userData/config.json (override with UNIFIED_INBOX_CONFIG).
+  configPath = process.env.UNIFIED_INBOX_CONFIG ?? join(app.getPath('userData'), 'config.json');
+  if (existsSync(configPath)) {
+    config = AppConfigSchema.parse(JSON.parse(readFileSync(configPath, 'utf8')));
+  } else {
+    config = AppConfigSchema.parse(CONFIG_DEFAULTS);
+    persistConfig();
+  }
 
   const dbPath = join(app.getPath('userData'), 'inbox.sqlite');
   store = new InboxStore(dbPath);
-  const router = new LlmRouter(config, {
+  // All models registered; the picker chooses which one drafts (config.defaultProvider).
+  providers = {
     echo: new EchoProvider(),
     ollama: new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL }),
-  });
+    claude: new ClaudeProvider(),
+    openai: new OpenAiProvider(),
+    gemini: new GeminiProvider(),
+  };
+  const router = new LlmRouter(config, providers);
   service = new InboxService({ store, router, config, onInbound: notifyInbound });
 
   fake = new FakeAdapter({ id: 'fake:demo', label: 'Demo channel' });
@@ -189,6 +235,14 @@ function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
   ipcMain.handle('inbox:health', async () => ({ channels: await service.channelsHealth(), draft: service.draftHealth() }));
+  ipcMain.handle('providers:list', () => providerList());
+  ipcMain.handle('providers:set', (_e, id: string) => {
+    if (providers[id]) {
+      config.defaultProvider = id; // LlmRouter reads this live off the shared config object
+      persistConfig();
+    }
+    return providerList();
+  });
   ipcMain.handle('inbox:markRead', (_e, threadId: string) => {
     service.markRead(threadId);
     updateBadge();

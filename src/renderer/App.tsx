@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
-import type { HealthStatus, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
+import type { HealthStatus, ProviderInfo, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
 import { inbox } from './api';
@@ -26,6 +26,7 @@ export function App() {
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
 
   const refreshThreads = useCallback(async () => {
@@ -170,6 +171,9 @@ export function App() {
     return () => clearInterval(iv);
   }, []);
 
+  // AI picker — which model drafts replies.
+  useEffect(() => { inbox.listProviders().then(setProviders).catch(() => {}); }, []);
+
   // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
   // so the risk bands and daily counters stay live as replies go out.
   const refreshGuard = useCallback(() => {
@@ -257,6 +261,18 @@ export function App() {
     }
   };
 
+  const onPickProvider = async (id: string) => {
+    const list = await inbox.setProvider(id);
+    setProviders(list);
+    const picked = list.find((p) => p.id === id);
+    flash(
+      picked && !picked.configured
+        ? `${picked.label} selected — add its API key to .env to use it`
+        : `AI set to ${picked?.label ?? id}`,
+      picked ? !picked.configured : false,
+    );
+  };
+
   const setStatus = async (threadId: string, status: 'open' | 'closed') => {
     await inbox.setThreadStatus(threadId, status);
     if (status === 'closed' && threadId === selectedId) setSelectedId(null); // it left the active view
@@ -290,6 +306,19 @@ export function App() {
           </div>
         </div>
         <div className="top-actions">
+          {providers.length > 0 && (
+            <label className="ai-pick" title="Which AI drafts replies">
+              <span>✨ AI</span>
+              <select value={providers.find((p) => p.active)?.id ?? ''} onChange={(e) => onPickProvider(e.target.value)}>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {p.configured ? '' : ' (needs key)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button className="btn ghost" onClick={() => setWaOpen(true)}>
             ✆ WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' ✓' : ''}
             {waGuard?.killed ? ' ⛔' : waGuard?.numbers.some((n) => n.risk === 'high') ? ' ⚠️' : ''}

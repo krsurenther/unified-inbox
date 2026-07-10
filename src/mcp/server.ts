@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { setDefaultResultOrder } from 'node:dns';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import { InboxStore } from '../core/store/InboxStore';
 import { LlmRouter } from '../core/llm/LlmRouter';
 import { EchoProvider } from '../core/llm/EchoProvider';
 import { OllamaProvider } from '../core/llm/OllamaProvider';
+import { ClaudeProvider, OpenAiProvider, GeminiProvider } from '../core/llm/cloud';
 import { AppConfigSchema } from '../core/config/Config';
 
 // See index.ts — some hosts' IPv6 hangs; prefer IPv4.
@@ -32,10 +33,15 @@ if (!existsSync(dbPath)) {
 // Read-only: this process must never write the shared inbox. draft_reply returns
 // text only; approval/sending live in the desktop app (human-in-the-loop).
 const store = new InboxStore(dbPath, { readOnly: true });
-const config = AppConfigSchema.parse({ defaultProvider: 'ollama' });
+// Honor the same operator config (provider choice) the desktop app wrote.
+const configPath = process.env.UNIFIED_INBOX_CONFIG ?? join(homedir(), 'Library', 'Application Support', 'unified-inbox', 'config.json');
+const config = AppConfigSchema.parse(existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : { defaultProvider: 'ollama' });
 const router = new LlmRouter(config, {
   echo: new EchoProvider(),
   ollama: new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL }),
+  claude: new ClaudeProvider(),
+  openai: new OpenAiProvider(),
+  gemini: new GeminiProvider(),
 });
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
