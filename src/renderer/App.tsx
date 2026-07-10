@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
 import type { WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
@@ -12,6 +12,9 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<Message[]>([]);
   const [draftBody, setDraftBody] = useState('');
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const dirtyRef = useRef(false); // did the user type since we last set the box programmatically?
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
@@ -61,12 +64,29 @@ export function App() {
     }
   }, [threads, filter]);
 
+  // Load the composer from a draft programmatically (resets the dirty flag).
+  const applyDraft = useCallback((id: string | null, body: string) => {
+    setDraftId(id);
+    setDraftBody(body);
+    dirtyRef.current = false;
+  }, []);
+
+  // User typing: update + mark dirty + debounce-persist the edit (status 'edited').
+  const onDraftChange = useCallback((body: string) => {
+    setDraftBody(body);
+    dirtyRef.current = true;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const id = draftId;
+    if (!id) return;
+    saveTimer.current = setTimeout(() => { void inbox.updateDraft(id, body); }, 800);
+  }, [draftId]);
+
   // On selection change only: load history + the current draft into the editor.
   // (Deliberately NOT depending on `threads`, so the 3s poll can't clobber edits.)
   useEffect(() => {
     if (!selectedId) {
       setHistory([]);
-      setDraftBody('');
+      applyDraft(null, '');
       return;
     }
     let cancelled = false;
@@ -77,30 +97,30 @@ export function App() {
       setHistory(h);
       const draft = all.find((x) => x.thread.id === selectedId)?.draft;
       // Use an existing real draft; the old `echo` placeholders regenerate on open.
-      if (draft && draft.status !== 'sent' && draft.providerId !== 'echo') {
-        setDraftBody(draft.body);
+      if (draft && draft.status !== 'sent' && draft.model !== 'placeholder' && draft.providerId !== 'echo') {
+        applyDraft(draft.id, draft.body);
         return;
       }
       const last = h[h.length - 1];
       if (last?.direction === 'inbound') {
-        setDraftBody('');
+        applyDraft(null, '');
         setDrafting(true);
         try {
           const d = await inbox.regenerateDraft(selectedId);
-          if (!cancelled) setDraftBody(d.body);
+          if (!cancelled && !dirtyRef.current) applyDraft(d.id, d.body); // don't clobber text typed while drafting
         } catch {
-          if (!cancelled) setDraftBody('');
+          if (!cancelled && !dirtyRef.current) applyDraft(null, '');
         } finally {
           if (!cancelled) setDrafting(false);
         }
       } else {
-        setDraftBody(draft && draft.status !== 'sent' ? draft.body : '');
+        applyDraft(draft && draft.status !== 'sent' ? draft.id : null, draft && draft.status !== 'sent' ? draft.body : '');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, applyDraft, refreshThreads]);
 
   // Poll for newly-synced threads + messages. Refreshes the list and the open
   // thread's history, but never the draft textarea (so edits survive).
@@ -153,7 +173,7 @@ export function App() {
     setDrafting(true);
     try {
       const d = await inbox.regenerateDraft(selectedId);
-      setDraftBody(d.body);
+      applyDraft(d.id, d.body); // user asked for a fresh draft — replace + reset dirty
       await refreshThreads();
     } catch (e) {
       flash(`Draft failed: ${(e as Error).message?.split(': ').pop() ?? 'error'}`, true);
@@ -164,6 +184,7 @@ export function App() {
 
   const onSend = async () => {
     if (!selectedId || !draftBody.trim()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current); // don't let a pending edit-save race the send
     setBusy(true);
     try {
       const res = await inbox.approveAndSend(selectedId, draftBody.trim());
@@ -306,13 +327,15 @@ export function App() {
                   <span className={`ai-tag ${drafting ? 'pulse' : ''}`}>
                     {drafting
                       ? '✨ Drafting with AI…'
-                      : `✨ AI draft${selected.draft?.providerId && selected.draft.providerId !== 'echo' ? ` · ${selected.draft.providerId}` : ''}`}
+                      : selected.draft?.status === 'edited'
+                        ? '✍️ Edited by you'
+                        : `✨ AI suggestion${selected.draft?.providerId && selected.draft.providerId !== 'echo' ? ` · ${selected.draft.providerId}` : ''}`}
                   </span>
                   <span className="safety">🔒 Auto-send OFF · human approval required</span>
                 </div>
                 <textarea
                   value={draftBody}
-                  onChange={(e) => setDraftBody(e.target.value)}
+                  onChange={(e) => onDraftChange(e.target.value)}
                   placeholder={drafting ? 'Generating a reply…' : 'No draft yet — click Regenerate.'}
                   rows={4}
                 />

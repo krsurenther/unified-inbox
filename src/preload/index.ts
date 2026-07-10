@@ -8,6 +8,7 @@ const api: InboxApi = {
   markRead: (threadId) => ipcRenderer.invoke('inbox:markRead', threadId),
   setThreadStatus: (threadId, status) => ipcRenderer.invoke('inbox:setThreadStatus', threadId, status),
   regenerateDraft: (threadId) => ipcRenderer.invoke('inbox:regenerateDraft', threadId),
+  updateDraft: (draftId, body) => ipcRenderer.invoke('inbox:updateDraft', draftId, body),
   approveAndSend: (threadId, body) => ipcRenderer.invoke('inbox:approveAndSend', threadId, body),
   simulateIncoming: () => ipcRenderer.invoke('inbox:simulateIncoming'),
 

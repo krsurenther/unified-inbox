@@ -187,6 +187,7 @@ function registerIpc(): void {
     service.setThreadStatus(threadId, status),
   );
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
+  ipcMain.handle('inbox:updateDraft', (_e, draftId: string, body: string) => service.updateDraft(draftId, body));
   ipcMain.handle('inbox:approveAndSend', async (_e, threadId: string, body: string) => {
     const r = await service.approveAndSend(threadId, { body, approvedBy: 'human:ui' });
     updateBadge(); // the outbound cleared this thread's unread

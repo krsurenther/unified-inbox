@@ -95,11 +95,31 @@ export class InboxService {
       body: msg.body,
       at: msg.timestamp ?? new Date().toISOString(),
     });
+    await this.maybeDraft(thread.id, { newInbound: true });
+  }
+
+  /**
+   * One drafting rule for both the push (ingest) and pull (sync) paths: draft only
+   * when a new customer message arrived AND it's the latest AND the current draft is
+   * machine-owned. Never touches a human-'edited'/'approved' draft — that's the
+   * durable-edit contract and it kills the push/pull asymmetry (stale pull drafts).
+   */
+  private async maybeDraft(threadId: string, opts: { newInbound: boolean }): Promise<void> {
+    if (!opts.newInbound) return;
+    const view = this.store.getThreadView(threadId);
+    if (view?.lastMessageDirection !== 'inbound') return; // already answered on the channel
+    const draft = view.draft;
+    if (draft && (draft.status === 'edited' || draft.status === 'approved')) return;
     try {
-      await this.generateDraft(thread.id);
+      await this.generateDraft(threadId);
     } catch {
-      /* best-effort — a down/slow LLM must not drop the inbound message */
+      /* best-effort — a down/slow LLM must not break ingest/sync */
     }
+  }
+
+  /** Persist a human-edited draft (status 'edited'); later drafting won't overwrite it. */
+  updateDraft(draftId: string, body: string): Draft {
+    return this.store.updateDraftBody(draftId, body);
   }
 
   /** (Re)generate an AI draft for a thread from its history + channel context. */
@@ -148,6 +168,7 @@ export class InboxService {
       const customer = this.store.upsertCustomer(channelId, d.participant.externalId, d.participant.name, d.participant.phone);
       const thread = this.store.findOrCreateThread(channelId, customer.id, d.threadKey);
 
+      let newInbound = false;
       for (const m of await adapter.getHistory(d.threadKey)) {
         const { inserted } = this.store.recordMessage({
           threadId: thread.id,
@@ -160,6 +181,7 @@ export class InboxService {
         if (inserted) {
           messages++;
           if (m.direction === 'inbound') {
+            newInbound = true;
             this.onInbound?.({
               threadId: thread.id,
               channelId,
@@ -173,18 +195,8 @@ export class InboxService {
       }
       this.store.setThreadSummary(thread.id, { unread: d.unread, lastMessageAt: d.lastMessageAt });
 
-      // Draft when the latest message is an unanswered buyer message (and we don't
-      // already have a live draft) — never auto-sends.
-      const history = this.store.getHistory(thread.id);
-      const last = history[history.length - 1];
-      const draft = this.store.getLatestDraft(thread.id);
-      if (last?.direction === 'inbound' && (!draft || draft.status === 'sent' || draft.status === 'discarded')) {
-        try {
-          await this.generateDraft(thread.id);
-        } catch {
-          /* drafting is best-effort — a down/slow LLM must not break the sync */
-        }
-      }
+      // Same rule as the push path: refresh the draft on a new buyer message, unless a human owns it.
+      await this.maybeDraft(thread.id, { newInbound });
     }
     return { threads: descriptors.length, messages };
   }

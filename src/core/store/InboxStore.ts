@@ -229,6 +229,12 @@ export class InboxStore {
     this.db.prepare(`UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?`).run(status, nowIso(), draftId);
   }
 
+  /** Persist a human-edited draft body — marks it 'edited' so drafting never overwrites it. */
+  updateDraftBody(draftId: string, body: string): Draft {
+    this.db.prepare(`UPDATE drafts SET body = ?, status = 'edited', updated_at = ? WHERE id = ?`).run(body, nowIso(), draftId);
+    return this.mapDraft(this.db.prepare(`SELECT * FROM drafts WHERE id = ?`).get(draftId) as Record<string, unknown>);
+  }
+
   // --- audit ---------------------------------------------------------------
 
   recordSendAudit(p: {

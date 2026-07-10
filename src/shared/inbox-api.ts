@@ -27,6 +27,8 @@ export interface InboxApi {
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
   setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): Promise<void>;
   regenerateDraft(threadId: string): Promise<Draft>;
+  /** Persist a human-edited draft body (marks it 'edited' so drafting won't overwrite it). */
+  updateDraft(draftId: string, body: string): Promise<Draft>;
   approveAndSend(threadId: string, body: string): Promise<{ sent: boolean; channelMessageId?: string }>;
   /** Demo-only: inject a synthetic inbound message to show live receive→draft. */
   simulateIncoming(): Promise<void>;

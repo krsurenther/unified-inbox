@@ -91,6 +91,40 @@ describe('InboxService.syncChannel (pull-style adapter)', () => {
     expect(events).toHaveLength(2);
   });
 
+  it('sync regenerates a suggested draft on new inbound, but leaves an edited draft alone', async () => {
+    let n = 0;
+    const config = AppConfigSchema.parse({ defaultProvider: 'count' });
+    const store = new InboxStore(':memory:');
+    const router = new LlmRouter(config, {
+      count: { id: 'count', async draftReply() { return { text: `d${++n}`, providerId: 'count', model: 'm' }; } },
+    });
+    const service = new InboxService({ store, router, config });
+    const hist = [{ direction: 'inbound' as const, body: 'q1', channelMessageId: 'm1', timestamp: '2026-06-18T00:00:00.000Z' }];
+    service.registerChannel({
+      channel: { id: 'duoke:s1', kind: 'duoke', label: 'S' },
+      async start() {}, async stop() {}, onMessage() {}, async send() { throw new Error('no'); },
+      async listThreads() { return [{ threadKey: 'c1', participant: { externalId: 'b1', name: 'A' }, lastMessageAt: hist[hist.length - 1]!.timestamp }]; },
+      async getHistory() { return hist; },
+      async health() { return { connected: true }; },
+    });
+
+    await service.syncChannel('duoke:s1');
+    const tid = service.listThreads()[0]!.thread.id;
+    expect(service.getDraft(tid)!.body).toBe('d1');
+
+    // a new customer message arrives → the suggested draft must refresh (the #15 bug: it stayed d1)
+    hist.push({ direction: 'inbound', body: 'q2 any update?', channelMessageId: 'm2', timestamp: '2026-06-18T01:00:00.000Z' });
+    await service.syncChannel('duoke:s1');
+    expect(service.getDraft(tid)!.body).toBe('d2');
+
+    // once a human edits the draft, later syncs must NOT overwrite it
+    service.updateDraft(service.getDraft(tid)!.id, 'my own reply');
+    hist.push({ direction: 'inbound', body: 'q3 hello?', channelMessageId: 'm3', timestamp: '2026-06-18T02:00:00.000Z' });
+    await service.syncChannel('duoke:s1');
+    expect(service.getDraft(tid)!.body).toBe('my own reply');
+    expect(service.getDraft(tid)!.status).toBe('edited');
+  });
+
   it('unregisterChannel removes a channel from the live registry (history kept)', async () => {
     const { service } = makeService();
     service.registerChannel(pullAdapter());
