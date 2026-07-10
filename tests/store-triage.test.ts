@@ -24,4 +24,13 @@ describe('InboxStore thread status', () => {
     s.recordInbound({ threadId: t.id, body: 'back again', channelMessageId: 'm2' });
     expect(s.getThreadView(t.id)!.thread.status).toBe('open');
   });
+
+  it('exposes the last message direction on the thread view', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s);
+    s.recordInbound({ threadId: t.id, body: 'hi', channelMessageId: 'm1' });
+    expect(s.getThreadView(t.id)!.lastMessageDirection).toBe('inbound');
+    s.recordOutbound({ threadId: t.id, body: 'hello!', channelMessageId: 'm2' });
+    expect(s.getThreadView(t.id)!.lastMessageDirection).toBe('outbound');
+  });
 });

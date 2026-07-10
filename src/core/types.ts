@@ -65,5 +65,6 @@ export interface ThreadView {
   channel: ChannelRef;
   customer: Customer;
   lastMessagePreview?: string;
+  lastMessageDirection?: MessageDirection;
   draft?: Draft;
 }

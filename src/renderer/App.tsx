@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
 import type { WaGuardStatus, WaNumberState } from '../shared/inbox-api';
+import { needsReply } from '../core/triage';
 import { inbox } from './api';
+
+type Filter = 'needs' | 'all' | 'marketplace' | 'whatsapp' | 'done';
+const isActive = (t: ThreadView) => t.thread.status !== 'closed';
 
 export function App() {
   const [threads, setThreads] = useState<ThreadView[]>([]);
@@ -14,7 +18,7 @@ export function App() {
   const [waOpen, setWaOpen] = useState(false);
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
-  const [filter, setFilter] = useState<'all' | 'marketplace' | 'whatsapp'>('all');
+  const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
 
   const refreshThreads = useCallback(async () => {
     const t = await inbox.listThreads();
@@ -32,19 +36,29 @@ export function App() {
   );
 
   const counts = useMemo(() => {
+    let needs = 0;
+    let all = 0;
     let marketplace = 0;
     let whatsapp = 0;
+    let done = 0;
     for (const t of threads) {
+      if (t.thread.status === 'closed') { done += 1; continue; }
+      all += 1;
+      if (needsReply(t)) needs += 1;
       if (t.channel.kind === 'duoke') marketplace += 1;
       else if (t.channel.kind === 'whatsapp') whatsapp += 1;
     }
-    return { all: threads.length, marketplace, whatsapp };
+    return { needs, all, marketplace, whatsapp, done };
   }, [threads]);
 
   const filteredThreads = useMemo(() => {
-    if (filter === 'marketplace') return threads.filter((t) => t.channel.kind === 'duoke');
-    if (filter === 'whatsapp') return threads.filter((t) => t.channel.kind === 'whatsapp');
-    return threads;
+    switch (filter) {
+      case 'needs': return threads.filter(needsReply);
+      case 'done': return threads.filter((t) => t.thread.status === 'closed');
+      case 'marketplace': return threads.filter((t) => isActive(t) && t.channel.kind === 'duoke');
+      case 'whatsapp': return threads.filter((t) => isActive(t) && t.channel.kind === 'whatsapp');
+      default: return threads.filter(isActive);
+    }
   }, [threads, filter]);
 
   // On selection change only: load history + the current draft into the editor.
@@ -178,6 +192,13 @@ export function App() {
     }
   };
 
+  const setStatus = async (threadId: string, status: 'open' | 'closed') => {
+    await inbox.setThreadStatus(threadId, status);
+    if (status === 'closed' && threadId === selectedId) setSelectedId(null); // it left the active view
+    await refreshThreads();
+    flash(status === 'closed' ? 'Marked done ✓' : 'Reopened');
+  };
+
   const disconnectWa = async (id: string, linked: boolean) => {
     const msg = linked
       ? "Unlink this WhatsApp number? This removes it from your phone's Linked Devices and deletes all its conversations from this inbox. Chats still on the phone re-import if you re-link."
@@ -213,9 +234,11 @@ export function App() {
           <div className="tabs">
             {(
               [
+                ['needs', 'Needs reply'],
                 ['all', 'All'],
                 ['marketplace', 'Marketplace'],
                 ['whatsapp', 'WhatsApp'],
+                ['done', 'Done'],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -259,6 +282,13 @@ export function App() {
                   <div className="dh-sub">
                     {selected.channel.label} · {selected.customer.externalId}
                   </div>
+                </div>
+                <div className="dh-actions">
+                  {selected.thread.status === 'closed' ? (
+                    <button className="btn ghost" onClick={() => setStatus(selected.thread.id, 'open')}>↩ Reopen</button>
+                  ) : (
+                    <button className="btn ghost" onClick={() => setStatus(selected.thread.id, 'closed')}>✓ Done</button>
+                  )}
                 </div>
               </div>
 

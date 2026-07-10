@@ -370,13 +370,14 @@ export class InboxStore {
 
   private toThreadView(thread: Thread): ThreadView {
     const last = this.db
-      .prepare(`SELECT body FROM messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`)
+      .prepare(`SELECT body, direction FROM messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`)
       .get(thread.id) as Record<string, unknown> | undefined;
     return {
       thread,
       channel: this.channelById(thread.channelId)!,
       customer: this.customerById(thread.customerId)!,
       lastMessagePreview: (last?.body as string) ?? undefined,
+      lastMessageDirection: (last?.direction as MessageDirection) ?? undefined,
       draft: this.getLatestDraft(thread.id),
     };
   }
