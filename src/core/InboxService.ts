@@ -93,6 +93,7 @@ export class InboxService {
       body: msg.body,
       channelMessageId: msg.channelMessageId,
       authorName: msg.from.name,
+      meta: msg.media ? { media: msg.media } : undefined,
       createdAt: msg.timestamp,
     });
     if (!inserted) return; // duplicate delivery — nothing new to draft or notify
@@ -208,6 +209,7 @@ export class InboxService {
           body: m.body,
           channelMessageId: m.channelMessageId,
           authorName: m.authorName,
+          meta: m.media ? { media: m.media } : undefined,
           createdAt: m.timestamp,
         });
         if (inserted) {

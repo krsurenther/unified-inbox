@@ -5,6 +5,12 @@ export interface WaId {
   _serialized: string;
 }
 
+export interface WaMedia {
+  data: string; // base64
+  mimetype: string;
+  filename?: string;
+}
+
 export interface WaMessage {
   id: WaId;
   from: string;
@@ -15,6 +21,8 @@ export interface WaMessage {
   type: string; // 'chat' | 'image' | 'ptt' | ...
   hasMedia: boolean;
   author?: string; // sender in a group
+  /** whatsapp-web.js: download the attached media (base64). Absent on the mock unless set. */
+  downloadMedia?(): Promise<WaMedia | undefined>;
 }
 
 export interface WaChat {

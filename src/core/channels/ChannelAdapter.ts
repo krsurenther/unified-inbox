@@ -1,5 +1,11 @@
 import type { ChannelRef, MessageDirection } from '../types';
 
+/** An inline image attachment, normalized to a data URI the renderer can show directly. */
+export interface MessageMedia {
+  mimetype: string;
+  dataUri: string; // data:<mimetype>;base64,<...>
+}
+
 /**
  * A normalized inbound message handed to the app by an adapter. The adapter is
  * responsible for translating the channel's native payload into this shape.
@@ -11,6 +17,7 @@ export interface InboundMessage {
   body: string;
   channelMessageId?: string;
   timestamp: string; // ISO-8601 UTC
+  media?: MessageMedia; // inline image, if any
   raw?: unknown; // original payload, kept for debugging / future fields
 }
 
@@ -31,6 +38,7 @@ export interface HistoryMessage {
   authorName?: string;
   channelMessageId?: string;
   timestamp: string;
+  media?: MessageMedia; // inline image, if any
 }
 
 export interface HistoryQuery {

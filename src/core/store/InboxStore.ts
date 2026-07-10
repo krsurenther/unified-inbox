@@ -123,15 +123,16 @@ export class InboxStore {
     body: string;
     channelMessageId?: string;
     authorName?: string;
+    meta?: Record<string, unknown>;
     createdAt?: string;
   }): { inserted: boolean } {
     const createdAt = p.createdAt ?? nowIso();
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO messages (id, thread_id, direction, body, channel_message_id, author_name, created_at)
-         VALUES (?, ?, 'inbound', ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO messages (id, thread_id, direction, body, channel_message_id, author_name, meta, created_at)
+         VALUES (?, ?, 'inbound', ?, ?, ?, ?, ?)`,
       )
-      .run(randomUUID(), p.threadId, p.body, p.channelMessageId ?? null, p.authorName ?? null, createdAt);
+      .run(randomUUID(), p.threadId, p.body, p.channelMessageId ?? null, p.authorName ?? null, p.meta ? JSON.stringify(p.meta) : null, createdAt);
 
     const inserted = Number(res.changes) > 0;
     if (inserted) {
@@ -181,15 +182,16 @@ export class InboxStore {
     body: string;
     channelMessageId?: string;
     authorName?: string;
+    meta?: Record<string, unknown>;
     createdAt?: string;
   }): { inserted: boolean } {
     const createdAt = p.createdAt ?? nowIso();
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO messages (id, thread_id, direction, body, channel_message_id, author_name, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO messages (id, thread_id, direction, body, channel_message_id, author_name, meta, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(randomUUID(), p.threadId, p.direction, p.body, p.channelMessageId ?? null, p.authorName ?? null, createdAt);
+      .run(randomUUID(), p.threadId, p.direction, p.body, p.channelMessageId ?? null, p.authorName ?? null, p.meta ? JSON.stringify(p.meta) : null, createdAt);
     return { inserted: Number(res.changes) > 0 };
   }
 

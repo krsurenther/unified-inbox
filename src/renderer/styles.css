@@ -318,6 +318,18 @@ body {
   border-radius: 14px;
   white-space: pre-wrap;
 }
+.msg-img {
+  display: block;
+  max-width: 280px;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.msg-img + .bubble-text {
+  margin-top: 6px;
+}
 .msg.inbound .bubble {
   background: var(--panel-2);
   border-bottom-left-radius: 4px;

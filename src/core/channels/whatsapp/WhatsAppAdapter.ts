@@ -3,6 +3,7 @@ import type {
   ChannelHealth,
   HistoryMessage,
   InboundMessage,
+  MessageMedia,
   OutboundMessage,
   SendResult,
   ThreadDescriptor,
@@ -116,12 +117,25 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.handler = handler;
   }
 
+  /** Download an image attachment into a data URI (images only for now; other media stays a placeholder). */
+  private async mediaOf(msg: WaMessage): Promise<MessageMedia | undefined> {
+    if (!msg.hasMedia || !msg.downloadMedia) return undefined;
+    try {
+      const m = await msg.downloadMedia();
+      if (!m?.data || !m.mimetype?.startsWith('image/')) return undefined;
+      return { mimetype: m.mimetype, dataUri: `data:${m.mimetype};base64,${m.data}` };
+    } catch {
+      return undefined; // media expired on WhatsApp's servers / download failed — keep the caption
+    }
+  }
+
   private async handleIncoming(msg: WaMessage): Promise<void> {
     if (!isInboxWaChat(msg.from)) return; // groups / status / broadcasts / newsletters aren't inbox chats
     if (msg.fromMe) return; // only inbound
     if (isSystemWaMessage(msg.type)) return; // skip encryption/notification noise
     const n = normalizeWaMessage(msg);
-    if (!n.body) return; // nothing displayable — don't store a blank bubble or draft on it
+    const media = await this.mediaOf(msg);
+    if (!n.body && !media) return; // nothing displayable — don't store a blank bubble or draft on it
     try {
       await this.handler?.({
         channelId: this.channel.id,
@@ -130,6 +144,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
         body: n.body,
         channelMessageId: n.channelMessageId,
         timestamp: n.timestamp,
+        media,
         raw: msg,
       });
     } catch (e) {
@@ -151,13 +166,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
   async getHistory(threadKey: string): Promise<HistoryMessage[]> {
     const chat = await this.client.getChatById(threadKey);
     const msgs = await chat.fetchMessages({ limit: this.historyLimit });
-    return msgs
-      .filter((m) => !isSystemWaMessage(m.type))
-      .map((m) => {
+    const kept = msgs.filter((m) => !isSystemWaMessage(m.type));
+    const out = await Promise.all(
+      kept.map(async (m) => {
         const n = normalizeWaMessage(m);
-        return { direction: n.direction, body: n.body, channelMessageId: n.channelMessageId, timestamp: n.timestamp };
-      })
-      .filter((m) => m.body !== ''); // drop empty bubbles (e.g. empty 'chat')
+        const media = await this.mediaOf(m);
+        return { direction: n.direction, body: n.body, channelMessageId: n.channelMessageId, timestamp: n.timestamp, media };
+      }),
+    );
+    return out.filter((m) => m.body !== '' || m.media); // keep image bubbles even with an empty caption
   }
 
   async send(msg: OutboundMessage): Promise<SendResult> {

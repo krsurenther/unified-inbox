@@ -404,12 +404,19 @@ export function App() {
               </div>
 
               <div className="history" ref={historyRef} onScroll={onHistoryScroll}>
-                {history.map((m) => (
-                  <div key={m.id} className={`msg ${m.direction}`}>
-                    <div className="bubble">{m.body}</div>
-                    <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
-                  </div>
-                ))}
+                {history.map((m) => {
+                  const media = (m.meta as { media?: { dataUri: string } } | undefined)?.media;
+                  const isPlaceholder = /^\[[a-z ]+\]$/i.test(m.body); // "[image]", "[video]", …
+                  return (
+                    <div key={m.id} className={`msg ${m.direction}`}>
+                      <div className="bubble">
+                        {media && <img className="msg-img" src={media.dataUri} alt="attachment" />}
+                        {m.body && !(media && isPlaceholder) && <div className="bubble-text">{m.body}</div>}
+                      </div>
+                      <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="composer">

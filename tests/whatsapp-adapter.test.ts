@@ -195,6 +195,31 @@ describe('WhatsAppAdapter', () => {
     expect(errs.some((e) => /ingest failed/i.test(e))).toBe(true); // the first was caught + logged
   });
 
+  it('downloads image media into a data URI (keeping the [image] caption)', async () => {
+    const { client, histories } = makeMock();
+    histories['60123456789@c.us'] = [
+      { ...waMsg({ id: { _serialized: 'img1' }, body: '', type: 'image', hasMedia: true }), downloadMedia: async () => ({ data: 'QUJD', mimetype: 'image/jpeg' }) },
+      { ...waMsg({ id: { _serialized: 'doc1' }, body: '', type: 'document', hasMedia: true }), downloadMedia: async () => ({ data: 'X', mimetype: 'application/pdf' }) },
+    ];
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
+    const hist = await a.getHistory('60123456789@c.us');
+    expect(hist[0]!.body).toBe('[image]');
+    expect(hist[0]!.media).toEqual({ mimetype: 'image/jpeg', dataUri: 'data:image/jpeg;base64,QUJD' });
+    expect(hist[1]!.media).toBeUndefined(); // non-image media stays a placeholder for now
+  });
+
+  it('attaches image media to a live inbound message', async () => {
+    const { client } = makeMock();
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
+    const got: Array<Record<string, unknown>> = [];
+    a.onMessage((m) => { got.push(m as unknown as Record<string, unknown>); });
+    await a.start();
+    client.emit('message', { ...waMsg({ id: { _serialized: 'in-img' }, body: '', type: 'image', hasMedia: true }), downloadMedia: async () => ({ data: 'QQ', mimetype: 'image/png' }) });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(got).toHaveLength(1);
+    expect(got[0]!.media).toEqual({ mimetype: 'image/png', dataUri: 'data:image/png;base64,QQ' });
+  });
+
   it('drops empty-bodied messages from ingest and history', async () => {
     const { client, histories } = makeMock();
     histories['60123456789@c.us'] = [
