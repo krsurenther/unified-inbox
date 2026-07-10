@@ -96,7 +96,7 @@ describe('inbox pipeline — fake channel + echo provider', () => {
   it('markRead clears a thread\'s unread (local only — no channel receipt)', async () => {
     const { service, store } = makeService();
     await service.start();
-    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'A' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1' });
+    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'A' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1', timestamp: new Date().toISOString() });
     const threadId = service.listThreads()[0]!.thread.id;
     expect(store.totalUnread()).toBe(1);
     service.markRead(threadId);
@@ -122,7 +122,7 @@ describe('inbox pipeline — fake channel + echo provider', () => {
   it('a draft created DURING the send is not marked sent (audit points at the approved draft)', async () => {
     const { service, store } = makeService();
     await service.start();
-    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'Aisha' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1' });
+    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'Aisha' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1', timestamp: new Date().toISOString() });
     const threadId = service.listThreads()[0]!.thread.id;
     const approved = store.getLatestDraft(threadId)!;
 
