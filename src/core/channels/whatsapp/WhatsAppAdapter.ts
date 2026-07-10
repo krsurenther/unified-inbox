@@ -116,6 +116,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     if (msg.fromMe) return; // only inbound
     if (isSystemWaMessage(msg.type)) return; // skip encryption/notification noise
     const n = normalizeWaMessage(msg);
+    if (!n.body) return; // nothing displayable — don't store a blank bubble or draft on it
     try {
       await this.handler?.({
         channelId: this.channel.id,
@@ -150,7 +151,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
       .map((m) => {
         const n = normalizeWaMessage(m);
         return { direction: n.direction, body: n.body, channelMessageId: n.channelMessageId, timestamp: n.timestamp };
-      });
+      })
+      .filter((m) => m.body !== ''); // drop empty bubbles (e.g. empty 'chat')
   }
 
   async send(msg: OutboundMessage): Promise<SendResult> {

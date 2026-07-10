@@ -52,7 +52,10 @@ export function isSystemWaMessage(type: string): boolean {
 }
 
 export function normalizeWaMessage(msg: WaMessage): NormalizedWaMessage {
-  const body = msg.body && msg.body.length > 0 ? msg.body : msg.hasMedia ? (MEDIA_LABEL[msg.type] ?? '[media]') : '';
+  // Prefer text; else a typed placeholder ([image]/[location]/[order]/…); a plain
+  // empty 'chat' stays '' so the adapter can drop it (no blank bubbles, no empty draft).
+  const body =
+    msg.body && msg.body.length > 0 ? msg.body : (MEDIA_LABEL[msg.type] ?? (msg.type !== 'chat' ? `[${msg.type}]` : ''));
   return {
     direction: msg.fromMe ? 'outbound' : 'inbound',
     body,

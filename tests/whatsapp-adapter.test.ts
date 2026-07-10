@@ -195,6 +195,23 @@ describe('WhatsAppAdapter', () => {
     expect(errs.some((e) => /ingest failed/i.test(e))).toBe(true); // the first was caught + logged
   });
 
+  it('drops empty-bodied messages from ingest and history', async () => {
+    const { client, histories } = makeMock();
+    histories['60123456789@c.us'] = [
+      waMsg({ id: { _serialized: 'h1' }, body: 'real', type: 'chat' }),
+      waMsg({ id: { _serialized: 'h2' }, body: '', type: 'chat' }),
+    ];
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
+    expect((await a.getHistory('60123456789@c.us')).map((m) => m.channelMessageId)).toEqual(['h1']);
+
+    const got: unknown[] = [];
+    a.onMessage((m) => { got.push(m); });
+    await a.start();
+    client.emit('message', waMsg({ id: { _serialized: 'e1' }, body: '', type: 'chat' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(got).toHaveLength(0);
+  });
+
   it('does not ingest status@broadcast or newsletter messages', async () => {
     const { client } = makeMock();
     const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });

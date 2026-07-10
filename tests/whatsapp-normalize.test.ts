@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { isInboxWaChat, normalizeWaMessage, waChatToDescriptor } from '../src/core/channels/whatsapp/normalize';
 
+describe('normalizeWaMessage body labels', () => {
+  const base = { id: { _serialized: 'm' }, from: '1@c.us', to: 'me', fromMe: false as const, timestamp: 1700000000, hasMedia: false };
+  it('labels typed non-media messages and leaves true empties empty', () => {
+    expect(normalizeWaMessage({ ...base, body: '', type: 'location' }).body).toBe('[location]');
+    expect(normalizeWaMessage({ ...base, body: '', type: 'order' }).body).toBe('[order]');
+    expect(normalizeWaMessage({ ...base, body: '', type: 'chat' }).body).toBe('');
+    expect(normalizeWaMessage({ ...base, body: 'real', type: 'chat' }).body).toBe('real');
+  });
+});
+
 describe('isInboxWaChat', () => {
   it('accepts 1:1 chats, rejects groups, broadcasts (incl. status) and newsletters', () => {
     expect(isInboxWaChat('60123456789@c.us')).toBe(true);
