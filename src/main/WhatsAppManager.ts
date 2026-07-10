@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { createWaClient } from '../core/channels/whatsapp/createWaClient';
 import { WhatsAppAdapter } from '../core/channels/whatsapp/WhatsAppAdapter';
 import { WhatsAppGuard, type WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
+import { nextReconnectDelay } from '../core/channels/whatsapp/reconnect';
 import type { InboxService } from '../core/InboxService';
 import type { WaNumberState } from '../shared/inbox-api';
 
@@ -40,6 +41,8 @@ export class WhatsAppManager {
   private readonly dataPath: string;
   private readonly onChange: () => void;
   private readonly guard: WhatsAppGuard;
+  private readonly reconnectAttempts = new Map<string, number>();
+  private readonly userDisconnecting = new Set<string>();
 
   constructor(opts: WhatsAppManagerOptions) {
     this.service = opts.service;
@@ -84,6 +87,22 @@ export class WhatsAppManager {
     return existsSync(join(this.dataPath, `session-${id}`));
   }
 
+  /** Capped-backoff auto-reconnect after an unexpected drop (5s → 30s → 2m, then stop). */
+  private scheduleReconnect(id: string): void {
+    const attempt = (this.reconnectAttempts.get(id) ?? 0) + 1;
+    const delay = nextReconnectDelay(attempt);
+    if (delay === undefined) {
+      console.log(`[wa] ${id} gave up auto-reconnect after ${attempt - 1} tries — Connect to retry`);
+      return;
+    }
+    this.reconnectAttempts.set(id, attempt);
+    console.log(`[wa] ${id} reconnect attempt ${attempt} in ${delay / 1000}s`);
+    setTimeout(() => {
+      if (this.userDisconnecting.has(id)) return; // unlinked in the meantime
+      void this.connect(id).catch((e) => console.error(`[wa] reconnect ${id}:`, (e as Error).message));
+    }, delay);
+  }
+
   autoStartLinked(): void {
     for (const [id] of this.entries) {
       if (this.hasSession(id)) {
@@ -95,6 +114,7 @@ export class WhatsAppManager {
   async connect(id: string): Promise<void> {
     const e = this.entries.get(id);
     if (!e || e.adapter) return;
+    this.userDisconnecting.delete(id); // a fresh connect re-enables auto-reconnect
     e.state = { id: e.cfg.id, label: e.cfg.label, state: 'connecting' };
     this.onChange();
 
@@ -109,6 +129,7 @@ export class WhatsAppManager {
         });
       },
       onReady: () => {
+        this.reconnectAttempts.delete(id); // healthy again — reset backoff
         e.state = { ...e.state, state: 'ready', qrDataUrl: undefined, detail: 'linked' };
         this.onChange();
         this.service
@@ -122,6 +143,14 @@ export class WhatsAppManager {
       },
       onDisconnected: (reason) => {
         e.state = { ...e.state, state: 'disconnected', detail: reason };
+        e.adapter = undefined; // critical: without this, connect(id) is a silent no-op (dead number)
+        this.service.unregisterChannel(adapter.channel.id);
+        void adapter.stop().catch(() => {});
+        this.onChange();
+        if (!this.userDisconnecting.has(id)) this.scheduleReconnect(id);
+      },
+      onAuthFailure: (m) => {
+        e.state = { ...e.state, state: 'error', detail: `session expired — relink (${m})` };
         this.onChange();
       },
     });
@@ -145,6 +174,8 @@ export class WhatsAppManager {
   async disconnect(id: string): Promise<void> {
     const e = this.entries.get(id);
     if (!e) return;
+    this.userDisconnecting.add(id); // suppress auto-reconnect for this intentional unlink
+    this.reconnectAttempts.delete(id);
     const wasReady = e.state.state === 'ready';
     const adapter = e.adapter;
     e.adapter = undefined;

@@ -226,6 +226,19 @@ describe('WhatsAppAdapter', () => {
     expect(got[0]!.channelMessageId).toBe('real');
   });
 
+  it('fires onAuthFailure and marks disconnected on auth_failure', async () => {
+    const { client } = makeMock();
+    let msg = '';
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' }, onAuthFailure: (m) => { msg = m; } });
+    a.onMessage(() => {});
+    await a.start();
+    client.emit('ready');
+    expect(a.connected).toBe(true);
+    client.emit('auth_failure', 'session invalidated');
+    expect(a.connected).toBe(false);
+    expect(msg).toMatch(/session invalidated/i);
+  });
+
   it('exposes the QR string for linking', async () => {
     const { client } = makeMock();
     let qrSeen = '';

@@ -30,6 +30,8 @@ export interface WhatsAppAdapterOptions {
   onReady?: () => void;
   /** Called when the linked session drops. */
   onDisconnected?: (reason: string) => void;
+  /** Called when authentication fails (session invalidated) — the number needs relinking. */
+  onAuthFailure?: (message: string) => void;
   /** Anti-ban guard (Phase 5): per-number cap, human-like pacing, kill switch. Optional. */
   sendPolicy?: SendPolicy;
 }
@@ -49,6 +51,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private readonly onQrCb?: (qr: string) => void;
   private readonly onReadyCb?: () => void;
   private readonly onDisconnectedCb?: (reason: string) => void;
+  private readonly onAuthFailureCb?: (message: string) => void;
   private readonly sendPolicy?: SendPolicy;
   private handler?: (m: InboundMessage) => void | Promise<void>;
   private ready = false;
@@ -62,6 +65,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.onQrCb = opts.onQr;
     this.onReadyCb = opts.onReady;
     this.onDisconnectedCb = opts.onDisconnected;
+    this.onAuthFailureCb = opts.onAuthFailure;
     this.sendPolicy = opts.sendPolicy;
     this.channel = { id: `whatsapp:${opts.number.id}`, kind: 'whatsapp', label: opts.number.label };
   }
@@ -88,8 +92,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
       this.ready = false;
       this.onDisconnectedCb?.(reason);
     });
-    this.client.on('auth_failure', () => {
+    this.client.on('auth_failure', (message?: string) => {
       this.ready = false;
+      this.onAuthFailureCb?.(String(message ?? 'authentication failed'));
     });
     this.client.on('message', (msg) => void this.handleIncoming(msg));
     await this.client.initialize();
