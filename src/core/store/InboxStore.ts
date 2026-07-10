@@ -33,14 +33,31 @@ const nowIso = (): string => new Date().toISOString();
  * touching business logic. Synchronous on purpose — node:sqlite is sync and the
  * store is tiny + local.
  */
+export interface InboxStoreOptions {
+  schemaPath?: string;
+  /** Open without write access and skip schema DDL — for the MCP server. */
+  readOnly?: boolean;
+}
+
 export class InboxStore {
   private readonly db: DatabaseSync;
 
-  constructor(dbPath = ':memory:', schemaPath = resolve(process.cwd(), 'db/schema.sql')) {
-    this.db = new DatabaseSync(dbPath);
-    // Apply the schema (idempotent) when available. A pre-existing DB opened
-    // standalone (e.g. by the MCP server, cwd unknown) runs without it present.
-    if (existsSync(schemaPath)) this.db.exec(readFileSync(schemaPath, 'utf8'));
+  constructor(dbPath = ':memory:', opts: InboxStoreOptions = {}) {
+    this.db = new DatabaseSync(dbPath, { readOnly: opts.readOnly ?? false });
+    // Cross-process safety: the desktop app and the MCP server share this file.
+    // Without a busy timeout, overlapping locks fail instantly (SQLITE_BUSY).
+    this.db.exec('PRAGMA busy_timeout = 5000');
+    // Apply the schema (idempotent) when available and writable. A pre-existing DB
+    // opened standalone (e.g. by the MCP server, cwd unknown) runs without it.
+    if (!opts.readOnly) {
+      const schemaPath = opts.schemaPath ?? resolve(process.cwd(), 'db/schema.sql');
+      if (existsSync(schemaPath)) this.db.exec(readFileSync(schemaPath, 'utf8'));
+    }
+  }
+
+  /** The connection's busy timeout (ms) — exposed for tests/diagnostics. */
+  busyTimeoutMs(): number {
+    return Number((this.db.prepare('PRAGMA busy_timeout').get() as { timeout: number }).timeout);
   }
 
   close(): void {

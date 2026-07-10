@@ -83,3 +83,5 @@ CREATE TABLE IF NOT EXISTS send_audit (
   sent_at            TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_send_audit_thread ON send_audit(thread_id);
+-- countSendsSince filters (channel_id, sent_at) on every send-policy check + guard poll.
+CREATE INDEX IF NOT EXISTS idx_send_audit_channel_time ON send_audit(channel_id, sent_at);
