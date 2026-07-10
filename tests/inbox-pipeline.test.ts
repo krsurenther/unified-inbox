@@ -93,6 +93,21 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('dispose() stops every adapter (kills WA Chromes) and closes the store', async () => {
+    const { service, store } = makeService();
+    let stopped = false;
+    service.registerChannel({
+      channel: { id: 'x:1', kind: 'fake' as const, label: 'X' },
+      async start() {}, async stop() { stopped = true; }, onMessage() {},
+      async listThreads() { return []; }, async getHistory() { return []; },
+      async send() { return { channelMessageId: 'i', sentAt: 'now' }; },
+      async health() { return { connected: true, banRisk: 'low' as const }; },
+    });
+    await service.dispose();
+    expect(stopped).toBe(true);
+    expect(() => store.upsertChannel({ id: 'y', kind: 'fake', label: 'Y' })).toThrow(); // db closed
+  });
+
   it('a draft created DURING the send is not marked sent (audit points at the approved draft)', async () => {
     const { service, store } = makeService();
     await service.start();

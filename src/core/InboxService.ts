@@ -69,6 +69,12 @@ export class InboxService {
     for (const a of this.channels.values()) await a.stop();
   }
 
+  /** Stop every adapter (kills WA puppeteer Chromes) and close the DB. Call once on app quit. */
+  async dispose(): Promise<void> {
+    await this.stop();
+    this.store.close();
+  }
+
   /** Ingest one inbound message: persist (idempotent), then auto-draft a reply. Never sends. */
   async ingest(msg: InboundMessage): Promise<void> {
     const customer = this.store.upsertCustomer(msg.channelId, msg.from.externalId, msg.from.name, msg.from.phone);

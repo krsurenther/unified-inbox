@@ -213,6 +213,7 @@ function createWindow(): void {
   });
 
   win.on('ready-to-show', () => win.show());
+  win.on('closed', () => { win = undefined; }); // stop sending to a destroyed window (macOS)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -248,6 +249,20 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+let quitting = false;
+app.on('before-quit', (e) => {
+  if (quitting) return;
+  e.preventDefault(); // let adapters (WA Chromes) tear down + DB close before exit
+  quitting = true;
+  if (syncTimer) clearInterval(syncTimer);
+  duokeSendDriver?.close();
+  const force = setTimeout(() => app.exit(0), 5000); // never hang on a slow Chrome teardown
+  void service
+    .dispose()
+    .catch((err) => console.error('[quit] dispose:', (err as Error).message))
+    .finally(() => { clearTimeout(force); app.exit(0); });
 });
 
 app.on('window-all-closed', () => {
