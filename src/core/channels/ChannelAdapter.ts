@@ -1,9 +1,12 @@
 import type { ChannelRef, MessageDirection } from '../types';
 
-/** An inline image attachment, normalized to a data URI the renderer can show directly. */
+/** A media attachment (image/video/voice/file), normalized so the renderer can show/play it. */
 export interface MessageMedia {
+  kind: 'image' | 'video' | 'audio' | 'file';
   mimetype: string;
-  dataUri: string; // data:<mimetype>;base64,<...>
+  dataUri?: string; // inline base64 (WhatsApp) — for image/video/audio
+  url?: string; // remote URL (marketplace CDN) — for image/video/audio
+  filename?: string; // for 'file' (documents)
 }
 
 /**

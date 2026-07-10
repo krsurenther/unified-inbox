@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
+import type { MessageMedia } from '../core/channels/ChannelAdapter';
 import type { HealthStatus, NormalizedDuokeOrder, ProviderInfo, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
@@ -450,12 +451,16 @@ export function App() {
 
               <div className="history" ref={historyRef} onScroll={onHistoryScroll}>
                 {history.map((m) => {
-                  const media = (m.meta as { media?: { dataUri: string } } | undefined)?.media;
-                  const isPlaceholder = /^\[[a-z ]+\]$/i.test(m.body); // "[image]", "[video]", …
+                  const media = (m.meta as { media?: MessageMedia } | undefined)?.media;
+                  const src = media?.dataUri ?? media?.url;
+                  const isPlaceholder = /^\[[a-z ]+\]$/i.test(m.body); // "[image]", "[video]", "[voice message]", …
                   return (
                     <div key={m.id} className={`msg ${m.direction}`}>
                       <div className="bubble">
-                        {media && <img className="msg-img" src={media.dataUri} alt="attachment" />}
+                        {media?.kind === 'image' && src && <img className="msg-img" src={src} alt="attachment" />}
+                        {media?.kind === 'video' && src && <video className="msg-video" src={src} controls preload="metadata" />}
+                        {media?.kind === 'audio' && src && <audio className="msg-audio" src={src} controls preload="metadata" />}
+                        {media?.kind === 'file' && <span className="msg-file">📎 {media.filename ?? 'attachment'}</span>}
                         {m.body && !(media && isPlaceholder) && <div className="bubble-text">{m.body}</div>}
                       </div>
                       <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>

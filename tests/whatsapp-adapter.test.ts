@@ -195,17 +195,21 @@ describe('WhatsAppAdapter', () => {
     expect(errs.some((e) => /ingest failed/i.test(e))).toBe(true); // the first was caught + logged
   });
 
-  it('downloads image media into a data URI (keeping the [image] caption)', async () => {
+  it('downloads image / video / voice into playable media, and files as a named chip', async () => {
     const { client, histories } = makeMock();
     histories['60123456789@c.us'] = [
       { ...waMsg({ id: { _serialized: 'img1' }, body: '', type: 'image', hasMedia: true }), downloadMedia: async () => ({ data: 'QUJD', mimetype: 'image/jpeg' }) },
-      { ...waMsg({ id: { _serialized: 'doc1' }, body: '', type: 'document', hasMedia: true }), downloadMedia: async () => ({ data: 'X', mimetype: 'application/pdf' }) },
+      { ...waMsg({ id: { _serialized: 'vid1' }, body: '', type: 'video', hasMedia: true }), downloadMedia: async () => ({ data: 'VVVV', mimetype: 'video/mp4' }) },
+      { ...waMsg({ id: { _serialized: 'ptt1' }, body: '', type: 'ptt', hasMedia: true }), downloadMedia: async () => ({ data: 'QQQQ', mimetype: 'audio/ogg' }) },
+      { ...waMsg({ id: { _serialized: 'doc1' }, body: '', type: 'document', hasMedia: true }), downloadMedia: async () => ({ data: 'DD', mimetype: 'application/pdf', filename: 'quote.pdf' }) },
     ];
     const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
     const hist = await a.getHistory('60123456789@c.us');
-    expect(hist[0]!.body).toBe('[image]');
-    expect(hist[0]!.media).toEqual({ mimetype: 'image/jpeg', dataUri: 'data:image/jpeg;base64,QUJD' });
-    expect(hist[1]!.media).toBeUndefined(); // non-image media stays a placeholder for now
+    expect(hist[0]!.media).toMatchObject({ kind: 'image', mimetype: 'image/jpeg', dataUri: 'data:image/jpeg;base64,QUJD' });
+    expect(hist[1]!.media).toMatchObject({ kind: 'video', mimetype: 'video/mp4', dataUri: 'data:video/mp4;base64,VVVV' });
+    expect(hist[2]!.media).toMatchObject({ kind: 'audio', mimetype: 'audio/ogg', dataUri: 'data:audio/ogg;base64,QQQQ' });
+    expect(hist[3]!.media).toMatchObject({ kind: 'file', mimetype: 'application/pdf', filename: 'quote.pdf' });
+    expect(hist[3]!.media!.dataUri).toBeUndefined(); // documents aren't inlined (kept small)
   });
 
   it('attaches image media to a live inbound message', async () => {
@@ -217,7 +221,7 @@ describe('WhatsAppAdapter', () => {
     client.emit('message', { ...waMsg({ id: { _serialized: 'in-img' }, body: '', type: 'image', hasMedia: true }), downloadMedia: async () => ({ data: 'QQ', mimetype: 'image/png' }) });
     await new Promise((r) => setTimeout(r, 0));
     expect(got).toHaveLength(1);
-    expect(got[0]!.media).toEqual({ mimetype: 'image/png', dataUri: 'data:image/png;base64,QQ' });
+    expect(got[0]!.media).toMatchObject({ kind: 'image', mimetype: 'image/png', dataUri: 'data:image/png;base64,QQ' });
   });
 
   it('drops empty-bodied messages from ingest and history', async () => {

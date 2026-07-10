@@ -327,7 +327,26 @@ body {
   border-radius: 10px;
   cursor: pointer;
 }
-.msg-img + .bubble-text {
+.msg-video {
+  display: block;
+  max-width: 300px;
+  max-height: 360px;
+  border-radius: 10px;
+  background: #000;
+}
+.msg-audio {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: 36px;
+}
+.msg-file {
+  display: inline-block;
+  font-size: 12.5px;
+}
+.msg-img + .bubble-text,
+.msg-video + .bubble-text,
+.msg-audio + .bubble-text {
   margin-top: 6px;
 }
 

@@ -117,13 +117,20 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.handler = handler;
   }
 
-  /** Download an image attachment into a data URI (images only for now; other media stays a placeholder). */
+  /**
+   * Download an attachment and normalize it: image/video/voice become inline data URIs the
+   * renderer plays; documents become a named 'file' chip (not inlined, to keep rows small).
+   */
   private async mediaOf(msg: WaMessage): Promise<MessageMedia | undefined> {
     if (!msg.hasMedia || !msg.downloadMedia) return undefined;
     try {
       const m = await msg.downloadMedia();
-      if (!m?.data || !m.mimetype?.startsWith('image/')) return undefined;
-      return { mimetype: m.mimetype, dataUri: `data:${m.mimetype};base64,${m.data}` };
+      if (!m?.data || !m.mimetype) return undefined;
+      const base = m.mimetype.split(';')[0] ?? m.mimetype;
+      if (base.startsWith('image/')) return { kind: 'image', mimetype: m.mimetype, dataUri: `data:${m.mimetype};base64,${m.data}` };
+      if (base.startsWith('video/')) return { kind: 'video', mimetype: m.mimetype, dataUri: `data:${m.mimetype};base64,${m.data}` };
+      if (base.startsWith('audio/')) return { kind: 'audio', mimetype: m.mimetype, dataUri: `data:${m.mimetype};base64,${m.data}` };
+      return { kind: 'file', mimetype: m.mimetype, filename: m.filename }; // documents etc. — name only
     } catch {
       return undefined; // media expired on WhatsApp's servers / download failed — keep the caption
     }
