@@ -29,6 +29,8 @@ export const AppConfigSchema = z.object({
         'Draft friendly, accurate replies. Never invent order, price, or stock details.',
     ),
   defaultProvider: z.string().default('echo'),
+  /** Per-provider API keys entered in-app (local file only; env vars are the fallback). */
+  apiKeys: z.record(z.string(), z.string()).default({}),
   channels: z.record(z.string(), ChannelConfigSchema).default({}),
   whatsapp: z
     .object({

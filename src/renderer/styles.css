@@ -97,6 +97,7 @@ body {
 /* channel filter tabs */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
@@ -104,6 +105,43 @@ body {
   top: 0;
   background: var(--panel);
   z-index: 2;
+}
+
+/* AI keys modal */
+.key-row {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--panel-2);
+}
+.key-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.key-input {
+  display: flex;
+  gap: 8px;
+}
+.key-input input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.key-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.key-input .btn {
+  flex-shrink: 0;
 }
 .tab {
   flex: 1;

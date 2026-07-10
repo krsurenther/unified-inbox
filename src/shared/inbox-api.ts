@@ -50,6 +50,8 @@ export interface InboxApi {
   listProviders(): Promise<ProviderInfo[]>;
   /** Choose which AI drafts replies (persists across restarts). Returns the fresh list. */
   setProvider(id: string): Promise<ProviderInfo[]>;
+  /** Save a cloud provider's API key (stored locally; takes effect immediately). Returns the fresh list. */
+  setProviderKey(id: string, key: string): Promise<ProviderInfo[]>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
@@ -63,8 +65,6 @@ export interface InboxApi {
   approveAndSend(threadId: string, body: string): Promise<{ queued: true; etaMs: number }>;
   /** Subscribe to send lifecycle events (queued → pacing → sent | failed). Returns unsubscribe. */
   onSendUpdate(cb: (e: SendEvent) => void): () => void;
-  /** Demo-only: inject a synthetic inbound message to show live receive→draft. */
-  simulateIncoming(): Promise<void>;
 
   // WhatsApp connect/link
   listWhatsApp(): Promise<WaNumberState[]>;

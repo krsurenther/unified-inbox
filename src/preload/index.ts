@@ -9,6 +9,7 @@ const api: InboxApi = {
   threadOrders: (threadId) => ipcRenderer.invoke('duoke:orders', threadId),
   listProviders: () => ipcRenderer.invoke('providers:list'),
   setProvider: (id) => ipcRenderer.invoke('providers:set', id),
+  setProviderKey: (id, key) => ipcRenderer.invoke('providers:setKey', id, key),
   markRead: (threadId) => ipcRenderer.invoke('inbox:markRead', threadId),
   setThreadStatus: (threadId, status) => ipcRenderer.invoke('inbox:setThreadStatus', threadId, status),
   setThreadMuted: (threadId, muted) => ipcRenderer.invoke('inbox:setThreadMuted', threadId, muted),
@@ -20,7 +21,6 @@ const api: InboxApi = {
     ipcRenderer.on('send:update', listener);
     return () => ipcRenderer.removeListener('send:update', listener);
   },
-  simulateIncoming: () => ipcRenderer.invoke('inbox:simulateIncoming'),
 
   listWhatsApp: () => ipcRenderer.invoke('wa:list'),
   connectWhatsApp: (id) => ipcRenderer.invoke('wa:connect', id),

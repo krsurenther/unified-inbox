@@ -87,6 +87,23 @@ const CONFIG_DEFAULTS = {
   },
 };
 
+/** Build a provider with its API key from config (in-app) falling back to env vars. */
+function makeProvider(id: string): LLMProvider {
+  const key = config.apiKeys?.[id] || undefined; // '' → undefined so env can still supply it
+  switch (id) {
+    case 'ollama':
+      return new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL });
+    case 'claude':
+      return new ClaudeProvider({ apiKey: key });
+    case 'openai':
+      return new OpenAiProvider({ apiKey: key });
+    case 'gemini':
+      return new GeminiProvider({ apiKey: key });
+    default:
+      return new EchoProvider();
+  }
+}
+
 /** The AI picker's rows: id, label, whether a key is present, and which is active. */
 function providerList(): Array<{ id: string; label: string; configured: boolean; active: boolean }> {
   return PROVIDER_META.map((m) => {
@@ -120,10 +137,10 @@ async function bootCore(): Promise<void> {
   // All models registered; the picker chooses which one drafts (config.defaultProvider).
   providers = {
     echo: new EchoProvider(),
-    ollama: new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL }),
-    claude: new ClaudeProvider(),
-    openai: new OpenAiProvider(),
-    gemini: new GeminiProvider(),
+    ollama: makeProvider('ollama'),
+    claude: makeProvider('claude'),
+    openai: makeProvider('openai'),
+    gemini: makeProvider('gemini'),
   };
   const router = new LlmRouter(config, providers);
   service = new InboxService({ store, router, config, onInbound: notifyInbound });
@@ -255,6 +272,14 @@ function registerIpc(): void {
     }
     return providerList();
   });
+  ipcMain.handle('providers:setKey', (_e, id: string, key: string) => {
+    if (['claude', 'openai', 'gemini'].includes(id)) {
+      config.apiKeys = { ...(config.apiKeys ?? {}), [id]: key.trim() };
+      persistConfig();
+      providers[id] = makeProvider(id); // rebuild with the new key (router reads the shared map)
+    }
+    return providerList();
+  });
   ipcMain.handle('inbox:markRead', (_e, threadId: string) => {
     service.markRead(threadId);
     updateBadge();
@@ -276,14 +301,6 @@ function registerIpc(): void {
     // serialized per number, and streams send:update events the renderer displays.
     sendQueue.enqueue({ threadId, channelId, body, approvedBy: 'human:ui' });
     return { queued: true as const, etaMs };
-  });
-  ipcMain.handle('inbox:simulateIncoming', async () => {
-    const pick = SIM_POOL[simSeq++ % SIM_POOL.length]!;
-    await fake.inject({
-      threadKey: `sim-${Date.now()}-${simSeq}`,
-      from: { externalId: `sim-${simSeq}`, name: pick.name },
-      body: pick.body,
-    });
   });
   ipcMain.handle('wa:list', () => waManager?.list() ?? []);
   ipcMain.handle('wa:connect', (_e, id: string) => waManager?.connect(id));

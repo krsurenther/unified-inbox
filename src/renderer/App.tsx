@@ -6,7 +6,7 @@ import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
 import { inbox } from './api';
 
-type Filter = 'needs' | 'all' | 'marketplace' | 'whatsapp' | 'done';
+type Filter = 'needs' | 'all' | 'whatsapp' | 'marketplace' | 'webstore' | 'done';
 const isActive = (t: ThreadView) => t.thread.status !== 'closed';
 
 export function App() {
@@ -19,10 +19,11 @@ export function App() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const historyRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true); // is the history scrolled to (near) the bottom?
-  const [busy, setBusy] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [waOpen, setWaOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
@@ -53,8 +54,9 @@ export function App() {
   const counts = useMemo(() => {
     let needs = 0;
     let all = 0;
-    let marketplace = 0;
     let whatsapp = 0;
+    let marketplace = 0;
+    let webstore = 0;
     let done = 0;
     for (const t of threads) {
       if (t.thread.status === 'closed') { done += 1; continue; }
@@ -62,16 +64,18 @@ export function App() {
       if (needsReply(t)) needs += 1;
       if (t.channel.kind === 'duoke') marketplace += 1;
       else if (t.channel.kind === 'whatsapp') whatsapp += 1;
+      else if (t.channel.kind === 'webstore') webstore += 1;
     }
-    return { needs, all, marketplace, whatsapp, done };
+    return { needs, all, whatsapp, marketplace, webstore, done };
   }, [threads]);
 
   const filteredThreads = useMemo(() => {
     switch (filter) {
       case 'needs': return threads.filter(needsReply);
       case 'done': return threads.filter((t) => t.thread.status === 'closed');
-      case 'marketplace': return threads.filter((t) => isActive(t) && t.channel.kind === 'duoke');
       case 'whatsapp': return threads.filter((t) => isActive(t) && t.channel.kind === 'whatsapp');
+      case 'marketplace': return threads.filter((t) => isActive(t) && t.channel.kind === 'duoke');
+      case 'webstore': return threads.filter((t) => isActive(t) && t.channel.kind === 'webstore');
       default: return threads.filter(isActive);
     }
   }, [threads, filter]);
@@ -260,17 +264,6 @@ export function App() {
     }
   };
 
-  const onSimulate = async () => {
-    setBusy(true);
-    try {
-      await inbox.simulateIncoming();
-      const t = await refreshThreads();
-      if (t.length) setSelectedId(t[0]!.thread.id);
-      flash('New message received');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const onPickProvider = async (id: string) => {
     const list = await inbox.setProvider(id);
@@ -278,10 +271,19 @@ export function App() {
     const picked = list.find((p) => p.id === id);
     flash(
       picked && !picked.configured
-        ? `${picked.label} selected — add its API key to .env to use it`
+        ? `${picked.label} selected — add its API key via 🔑 AI keys to use it`
         : `AI set to ${picked?.label ?? id}`,
       picked ? !picked.configured : false,
     );
+  };
+
+  const saveKey = async (id: string) => {
+    const key = keyInputs[id]?.trim();
+    if (!key) return;
+    const list = await inbox.setProviderKey(id, key);
+    setProviders(list);
+    setKeyInputs((s) => ({ ...s, [id]: '' }));
+    flash(`${list.find((p) => p.id === id)?.label ?? id} key saved ✓`);
   };
 
   const setStatus = async (threadId: string, status: 'open' | 'closed') => {
@@ -330,12 +332,12 @@ export function App() {
               </select>
             </label>
           )}
+          <button className="btn ghost" onClick={() => setKeysOpen(true)}>
+            🔑 AI keys
+          </button>
           <button className="btn ghost" onClick={() => setWaOpen(true)}>
             ✆ WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' ✓' : ''}
             {waGuard?.killed ? ' ⛔' : waGuard?.numbers.some((n) => n.risk === 'high') ? ' ⚠️' : ''}
-          </button>
-          <button className="btn ghost" onClick={onSimulate} disabled={busy}>
-            ✦ Simulate incoming
           </button>
         </div>
       </header>
@@ -347,8 +349,9 @@ export function App() {
               [
                 ['needs', 'Needs reply'],
                 ['all', 'All'],
-                ['marketplace', 'Marketplace'],
                 ['whatsapp', 'WhatsApp'],
+                ['marketplace', 'Marketplace'],
+                ['webstore', 'Webstore'],
                 ['done', 'Done'],
               ] as const
             ).map(([key, label]) => (
@@ -595,6 +598,44 @@ export function App() {
                 {n.detail && n.state !== 'ready' && <div className="wa-detail">{n.detail}</div>}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {keysOpen && (
+        <div className="wa-overlay" onClick={() => setKeysOpen(false)}>
+          <div className="wa-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="wa-head">
+              <span>AI provider keys</span>
+              <button className="btn ghost" onClick={() => setKeysOpen(false)}>✕</button>
+            </div>
+            <p className="wa-sub">
+              Paste an API key to enable a cloud model. Keys are stored locally on this machine only — never
+              in the code or synced anywhere. Local (Ollama) needs no key.
+            </p>
+            {providers
+              .filter((p) => p.id !== 'ollama')
+              .map((p) => (
+                <div key={p.id} className="key-row">
+                  <div className="key-row-head">
+                    <span className="wa-label">{p.label}</span>
+                    <span className={`wa-badge ${p.configured ? 'ready' : ''}`}>{p.configured ? 'key set ✓' : 'no key'}</span>
+                  </div>
+                  <div className="key-input">
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      placeholder={p.configured ? '•••••• saved — paste to replace' : `Paste ${p.label} API key`}
+                      value={keyInputs[p.id] ?? ''}
+                      onChange={(e) => setKeyInputs((s) => ({ ...s, [p.id]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void saveKey(p.id); }}
+                    />
+                    <button className="btn primary" disabled={!keyInputs[p.id]?.trim()} onClick={() => saveKey(p.id)}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}
