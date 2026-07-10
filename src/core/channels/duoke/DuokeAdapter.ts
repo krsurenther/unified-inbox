@@ -81,6 +81,7 @@ export class DuokeAdapter implements ChannelAdapter {
       authorName: m.authorRole === 'system' ? 'System' : undefined,
       channelMessageId: m.channelMessageId,
       timestamp: m.timestamp,
+      media: m.media ? { kind: m.media.kind, mimetype: '', url: m.media.url } : undefined,
     }));
   }
 

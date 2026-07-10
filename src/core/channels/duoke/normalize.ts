@@ -13,12 +13,20 @@ export interface DuokeRawMessage {
 
 export type AuthorRole = 'buyer' | 'seller' | 'system';
 
+export interface DuokeMedia {
+  kind: 'image' | 'video' | 'audio';
+  url: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
+}
+
 export interface NormalizedDuokeMessage {
   direction: 'inbound' | 'outbound';
   authorRole: AuthorRole;
   body: string;
   channelMessageId: string;
   kind: string;
+  media?: DuokeMedia;
   timestamp: string; // ISO-8601 UTC
 }
 
@@ -100,6 +108,40 @@ function price(content: Record<string, unknown>): string | undefined {
   return `${cur} ${content.price}`.trim();
 }
 
+/**
+ * Extract a playable media URL from a Duoke message. image/sticker → content.imageUrl
+ * (confirmed live, public URLs). video/voice field names are inferred from Duoke's own
+ * cloudCustomData schema (not seen live in this account) — harmless if absent.
+ */
+function mediaOf(messageType: string, content: Record<string, unknown>): DuokeMedia | undefined {
+  switch (messageType) {
+    case 'image':
+    case 'sticker': {
+      const url = str(content.imageUrl);
+      return url ? { kind: 'image', url } : undefined;
+    }
+    case 'video': {
+      const url = str(content.videoUrl);
+      if (!url) return undefined;
+      return {
+        kind: 'video',
+        url,
+        thumbnailUrl: str(content.imageUrl),
+        durationSeconds: content.durationSeconds != null ? Number(content.durationSeconds) : undefined,
+      };
+    }
+    case 'voice':
+    case 'sound':
+    case 'audio': {
+      const url = str(content.soundUrl) ?? str(content.voiceUrl) ?? str(content.url);
+      if (!url) return undefined;
+      return { kind: 'audio', url, durationSeconds: content.durationSeconds != null ? Number(content.durationSeconds) : undefined };
+    }
+    default:
+      return undefined;
+  }
+}
+
 export function normalizeDuokeMessage(raw: DuokeRawMessage): NormalizedDuokeMessage {
   const role = roleOf(raw.fromAccountType);
   const content = parseContent(raw.messageContent);
@@ -109,6 +151,7 @@ export function normalizeDuokeMessage(raw: DuokeRawMessage): NormalizedDuokeMess
     body: bodyOf(raw.messageType, content, raw.cloudCustomData?.text ?? undefined),
     channelMessageId: raw.messageId,
     kind: raw.messageType,
+    media: mediaOf(raw.messageType, content),
     timestamp: new Date(raw.createdTimestamp).toISOString(),
   };
 }

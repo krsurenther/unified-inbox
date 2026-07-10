@@ -453,7 +453,7 @@ export function App() {
                 {history.map((m) => {
                   const media = (m.meta as { media?: MessageMedia } | undefined)?.media;
                   const src = media?.dataUri ?? media?.url;
-                  const isPlaceholder = /^\[[a-z ]+\]$/i.test(m.body); // "[image]", "[video]", "[voice message]", …
+                  const isPlaceholder = /\[[a-z ]+\]$/i.test(m.body.trim()); // "[image]", "[video]", "🖼️ [image]", …
                   return (
                     <div key={m.id} className={`msg ${m.direction}`}>
                       <div className="bubble">

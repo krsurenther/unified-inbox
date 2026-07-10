@@ -83,6 +83,19 @@ describe('normalizeConversation', () => {
   });
 });
 
+describe('normalizeDuokeMessage media', () => {
+  const base = { messageId: 'm', fromAccountType: 1, createdTimestamp: 1 };
+  it('extracts the image URL for image + sticker messages; text has no media', () => {
+    expect(normalizeDuokeMessage({ ...base, messageType: 'image', messageContent: '{"imageUrl":"https://cdn/x.jpg"}' }).media).toEqual({ kind: 'image', url: 'https://cdn/x.jpg' });
+    expect(normalizeDuokeMessage({ ...base, messageType: 'sticker', messageContent: '{"imageUrl":"https://cdn/s.png","text":"[thumbsup]"}' }).media).toEqual({ kind: 'image', url: 'https://cdn/s.png' });
+    expect(normalizeDuokeMessage({ ...base, messageType: 'text', messageContent: '{"text":"hi"}' }).media).toBeUndefined();
+  });
+  it('maps video + voice to playable media (inferred fields)', () => {
+    expect(normalizeDuokeMessage({ ...base, messageType: 'video', messageContent: '{"videoUrl":"https://cdn/v.mp4","imageUrl":"https://cdn/poster.jpg"}' }).media).toMatchObject({ kind: 'video', url: 'https://cdn/v.mp4', thumbnailUrl: 'https://cdn/poster.jpg' });
+    expect(normalizeDuokeMessage({ ...base, messageType: 'voice', messageContent: '{"soundUrl":"https://cdn/a.mp3"}' }).media).toMatchObject({ kind: 'audio', url: 'https://cdn/a.mp3' });
+  });
+});
+
 describe('normalizeOrder', () => {
   it('normalizes an order + its products from the order/list payload', () => {
     const n = normalizeOrder({
