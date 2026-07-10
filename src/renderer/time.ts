@@ -2,7 +2,7 @@
 export function formatRelative(iso: string | undefined, now: number = Date.now()): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '';
+  if (Number.isNaN(t) || t < 946684800000) return ''; // pre-2000 = the "no messages yet" EPOCH sentinel → blank
   const sec = Math.floor((now - t) / 1000);
   if (sec < 60) return 'now';
   const min = Math.floor(sec / 60);

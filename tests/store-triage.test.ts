@@ -44,6 +44,26 @@ describe('InboxStore thread status', () => {
     expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2027-01-01T00:00:00.000Z');
   });
 
+  it('a freshly-synced thread adopts its first message time even when it is in the past (no now() seed)', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s); // created "now"
+    s.recordInbound({ threadId: t.id, body: 'old backfill', channelMessageId: 'm1', createdAt: '2026-06-17T03:58:52.000Z' });
+    // Regression: last_message_at was seeded to now() and MAX() refused to move it back, so an
+    // old thread showed "2h ago". It must reflect the real (older) message time.
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-06-17T03:58:52.000Z');
+  });
+
+  it('repairThreadLastMessageAt recomputes from stored messages, fixing a forward-corrupted stamp', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s);
+    s.recordInbound({ threadId: t.id, body: 'real', channelMessageId: 'm1', createdAt: '2026-06-01T00:00:00.000Z' });
+    s.setThreadSummary(t.id, { lastMessageAt: '2099-01-01T00:00:00.000Z' }); // bogus future stamp sticks (monotonic)
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2099-01-01T00:00:00.000Z');
+    const fixed = s.repairThreadLastMessageAt();
+    expect(fixed).toBeGreaterThanOrEqual(1);
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-06-01T00:00:00.000Z'); // back to the real message time
+  });
+
   it('exposes the last message direction on the thread view', () => {
     const s = new InboxStore(':memory:');
     const t = seedThread(s);

@@ -7,6 +7,7 @@ import { formatRelative } from './time';
 import { inbox } from './api';
 
 type Filter = 'needs' | 'all' | 'whatsapp' | 'marketplace' | 'webstore' | 'done';
+type SortBy = 'newest' | 'oldest';
 const isActive = (t: ThreadView) => t.thread.status !== 'closed';
 
 export function App() {
@@ -37,6 +38,7 @@ export function App() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [orders, setOrders] = useState<NormalizedDuokeOrder[]>([]);
   const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
+  const [sortBy, setSortBy] = useState<SortBy>('newest');
 
   const refreshThreads = useCallback(async () => {
     const t = await inbox.listThreads();
@@ -76,15 +78,23 @@ export function App() {
   }, [threads]);
 
   const filteredThreads = useMemo(() => {
+    let list: ThreadView[];
     switch (filter) {
-      case 'needs': return threads.filter(needsReply);
-      case 'done': return threads.filter((t) => t.thread.status === 'closed');
-      case 'whatsapp': return threads.filter((t) => isActive(t) && t.channel.kind === 'whatsapp');
-      case 'marketplace': return threads.filter((t) => isActive(t) && t.channel.kind === 'duoke');
-      case 'webstore': return threads.filter((t) => isActive(t) && t.channel.kind === 'webstore');
-      default: return threads.filter(isActive);
+      case 'needs': list = threads.filter(needsReply); break;
+      case 'done': list = threads.filter((t) => t.thread.status === 'closed'); break;
+      case 'whatsapp': list = threads.filter((t) => isActive(t) && t.channel.kind === 'whatsapp'); break;
+      case 'marketplace': list = threads.filter((t) => isActive(t) && t.channel.kind === 'duoke'); break;
+      case 'webstore': list = threads.filter((t) => isActive(t) && t.channel.kind === 'webstore'); break;
+      default: list = threads.filter(isActive);
     }
-  }, [threads, filter]);
+    // Sort by receive time. ISO-8601 sorts lexicographically = chronologically.
+    const dir = sortBy === 'oldest' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const av = a.thread.lastMessageAt ?? '';
+      const bv = b.thread.lastMessageAt ?? '';
+      return av === bv ? 0 : dir * (av < bv ? -1 : 1);
+    });
+  }, [threads, filter, sortBy]);
 
   // Load the composer from a draft programmatically (resets the dirty flag).
   const applyDraft = useCallback((id: string | null, body: string) => {
@@ -404,6 +414,13 @@ export function App() {
                 <span className="tab-count">{counts[key]}</span>
               </button>
             ))}
+          </div>
+          <div className="sortbar">
+            <span className="sortbar-label">Sort by time</span>
+            <div className="sort-opts">
+              <button className={`sort-opt ${sortBy === 'newest' ? 'active' : ''}`} onClick={() => setSortBy('newest')}>Newest</button>
+              <button className={`sort-opt ${sortBy === 'oldest' ? 'active' : ''}`} onClick={() => setSortBy('oldest')}>Oldest</button>
+            </div>
           </div>
           {(filter === 'marketplace' || filter === 'all') && duokeDown && (
             <div className="banner warn">⚠ Marketplaces not syncing — open Duoke and log in.</div>

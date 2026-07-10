@@ -28,6 +28,14 @@ export interface SendAuditRow {
 const nowIso = (): string => new Date().toISOString();
 
 /**
+ * "No messages yet" sentinel for last_message_at (the column is NOT NULL). Because
+ * updates use MAX(last_message_at, ?), any real message time promotes past this —
+ * so a backfilled thread takes its true (possibly old) message time instead of being
+ * frozen at creation time. The renderer treats a pre-2000 stamp as blank.
+ */
+const EPOCH = '1970-01-01T00:00:00.000Z';
+
+/**
  * The local message store. The ONLY module that touches the database engine, so
  * the engine (currently Node's built-in node:sqlite) is swappable without
  * touching business logic. Synchronous on purpose — node:sqlite is sync and the
@@ -111,13 +119,31 @@ export class InboxStore {
 
     const id = randomUUID();
     const now = nowIso();
+    // Seed last_message_at to EPOCH, not now(): a synced thread's real time comes from its
+    // (possibly old) backfilled messages via MAX(). Seeding now() froze old threads at "just now".
     this.db
       .prepare(
         `INSERT INTO threads (id, channel_id, customer_id, thread_key, status, unread, last_message_at, created_at)
          VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
       )
-      .run(id, channelId, customerId, threadKey, now, now);
+      .run(id, channelId, customerId, threadKey, EPOCH, now);
     return this.mapThread(this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(id) as Record<string, unknown>);
+  }
+
+  /**
+   * Recompute every thread's last_message_at from its stored messages (EPOCH if none).
+   * One-time repair for rows corrupted by the old now()-seed bug, where old threads were
+   * pinned to their sync time. Returns the number of rows changed.
+   */
+  repairThreadLastMessageAt(): number {
+    const res = this.db
+      .prepare(
+        `UPDATE threads
+            SET last_message_at = COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), ?)
+          WHERE last_message_at IS NOT (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id)`,
+      )
+      .run(EPOCH);
+    return Number(res.changes);
   }
 
   // --- messages ------------------------------------------------------------
