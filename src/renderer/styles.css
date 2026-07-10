@@ -235,7 +235,7 @@ body {
 .history {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 20px;
+  padding: 18px 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;

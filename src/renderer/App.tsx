@@ -15,6 +15,8 @@ export function App() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const dirtyRef = useRef(false); // did the user type since we last set the box programmatically?
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const historyRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true); // is the history scrolled to (near) the bottom?
   const [busy, setBusy] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
@@ -131,6 +133,18 @@ export function App() {
     }, 3000);
     return () => clearInterval(iv);
   }, [selectedId, refreshThreads]);
+
+  // Opening a thread lands on the newest message.
+  useEffect(() => { pinnedRef.current = true; }, [selectedId]);
+  // When history grows, stick to the bottom only if the reader was already there.
+  useEffect(() => {
+    const el = historyRef.current;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [history]);
+  const onHistoryScroll = () => {
+    const el = historyRef.current;
+    if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
 
   // WhatsApp connect state — initial load + live updates pushed from main.
   useEffect(() => {
@@ -313,7 +327,7 @@ export function App() {
                 </div>
               </div>
 
-              <div className="history">
+              <div className="history" ref={historyRef} onScroll={onHistoryScroll}>
                 {history.map((m) => (
                   <div key={m.id} className={`msg ${m.direction}`}>
                     <div className="bubble">{m.body}</div>
