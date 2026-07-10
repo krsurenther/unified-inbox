@@ -732,7 +732,7 @@ export function App() {
                 value={mcpToken}
                 onChange={(e) => setMcpToken(e.target.value)}
               />
-              <button className="btn primary" onClick={saveMcp}>{mcpUrl ? 'Save Hub tools' : 'Disable Hub tools'}</button>
+              <button className="btn primary" onClick={saveMcp}>{mcpHasToken || mcpUrl ? 'Save Hub tools' : 'Save'}</button>
             </div>
           </div>
         </div>
