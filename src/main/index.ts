@@ -143,11 +143,11 @@ async function bootCore(): Promise<void> {
 
   const dbPath = join(app.getPath('userData'), 'inbox.sqlite');
   store = new InboxStore(dbPath);
-  // One-time repair: old builds seeded last_message_at to now(), pinning backfilled threads to
-  // their sync time (they showed "2h" for weeks-old chats). Recompute from real messages, once.
-  if (store.getSetting('lma_repaired_v2') !== '1') {
+  // Self-healing on every boot (one cheap UPDATE): recompute each thread's last_message_at
+  // from its stored messages, catching any row that drifted (old now()-seed bug, or inserts
+  // from builds where a write path missed the bump).
+  {
     const fixed = store.repairThreadLastMessageAt();
-    store.setSetting('lma_repaired_v2', '1');
     if (fixed) console.log(`[repair] recomputed last_message_at for ${fixed} threads`);
   }
   // All models registered; the picker chooses which one drafts (config.defaultProvider).

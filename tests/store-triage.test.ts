@@ -74,6 +74,18 @@ describe('InboxStore thread status', () => {
     expect(s.getThreadView(empty.id)!.thread.lastMessageAt < '2000-01-01').toBe(true); // EPOCH sentinel → blank in UI
   });
 
+  it('a sync-path recordMessage bumps last_message_at (regression: Duoke replies were invisible)', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s);
+    // Pull-sync backfill: both directions go through recordMessage, not recordInbound/Outbound.
+    s.recordMessage({ threadId: t.id, direction: 'inbound', body: 'q', channelMessageId: 'm1', createdAt: '2026-07-10T10:00:00.000Z' });
+    s.recordMessage({ threadId: t.id, direction: 'outbound', body: 'sorry no', channelMessageId: 'm2', createdAt: '2026-07-10T16:00:40.000Z' });
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-07-10T16:00:40.000Z');
+    // Idempotent re-sync of an older message must not move it (monotonic), and a dup insert changes nothing.
+    s.recordMessage({ threadId: t.id, direction: 'inbound', body: 'q', channelMessageId: 'm1', createdAt: '2026-07-10T10:00:00.000Z' });
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-07-10T16:00:40.000Z');
+  });
+
   it('exposes the last message direction on the thread view', () => {
     const s = new InboxStore(':memory:');
     const t = seedThread(s);

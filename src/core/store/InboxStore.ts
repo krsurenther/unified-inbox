@@ -224,6 +224,13 @@ export class InboxStore {
       )
       .run(randomUUID(), p.threadId, p.direction, p.body, p.channelMessageId ?? null, p.authorName ?? null, p.meta ? JSON.stringify(p.meta) : null, createdAt);
     const inserted = Number(res.changes) > 0;
+    if (inserted) {
+      // Keep the thread's row time on the newest stored message (monotonic). Without this,
+      // threads updated only by pull-sync (e.g. replies typed directly in Duoke) never move.
+      this.db
+        .prepare(`UPDATE threads SET last_message_at = MAX(last_message_at, ?) WHERE id = ?`)
+        .run(createdAt, p.threadId);
+    }
     // Backfill media onto an already-stored message (e.g. a historical WhatsApp image
     // whose media we only downloaded on a later re-sync). Only when meta is currently null.
     if (!inserted && p.meta && p.channelMessageId) {
