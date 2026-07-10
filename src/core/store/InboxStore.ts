@@ -234,11 +234,14 @@ export class InboxStore {
     return { inserted };
   }
 
-  /** Set a thread's authoritative unread / last-activity from the channel. */
-  setThreadSummary(threadId: string, p: { unread?: number; lastMessageAt?: string }): void {
+  /**
+   * Set a thread's authoritative unread count from the channel. Deliberately does NOT
+   * touch last_message_at — that tracks the newest STORED message only, so the row time
+   * always matches the last visible bubble. (The channel's own last-activity timestamp can
+   * be newer than our newest displayable message when older ones are filtered/history-limited.)
+   */
+  setThreadSummary(threadId: string, p: { unread?: number }): void {
     if (p.unread != null) this.db.prepare(`UPDATE threads SET unread = ? WHERE id = ?`).run(p.unread, threadId);
-    if (p.lastMessageAt)
-      this.db.prepare(`UPDATE threads SET last_message_at = MAX(last_message_at, ?) WHERE id = ?`).run(p.lastMessageAt, threadId);
   }
 
   // --- drafts --------------------------------------------------------------

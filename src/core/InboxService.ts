@@ -229,7 +229,7 @@ export class InboxService {
           }
         }
       }
-      this.store.setThreadSummary(thread.id, { unread: d.unread, lastMessageAt: d.lastMessageAt });
+      this.store.setThreadSummary(thread.id, { unread: d.unread }); // last_message_at tracks stored messages, not channel last-activity
 
       // Same rule as the push path: refresh the draft on a new buyer message, unless a human owns it.
       await this.maybeDraft(thread.id, { newInbound });

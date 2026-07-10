@@ -145,9 +145,9 @@ async function bootCore(): Promise<void> {
   store = new InboxStore(dbPath);
   // One-time repair: old builds seeded last_message_at to now(), pinning backfilled threads to
   // their sync time (they showed "2h" for weeks-old chats). Recompute from real messages, once.
-  if (store.getSetting('lma_repaired_v1') !== '1') {
+  if (store.getSetting('lma_repaired_v2') !== '1') {
     const fixed = store.repairThreadLastMessageAt();
-    store.setSetting('lma_repaired_v1', '1');
+    store.setSetting('lma_repaired_v2', '1');
     if (fixed) console.log(`[repair] recomputed last_message_at for ${fixed} threads`);
   }
   // All models registered; the picker chooses which one drafts (config.defaultProvider).

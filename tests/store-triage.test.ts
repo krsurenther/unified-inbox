@@ -36,12 +36,22 @@ describe('InboxStore thread status', () => {
     expect(s.getThreadView(t.id)!.thread.status).toBe('open');
   });
 
-  it('last_message_at only moves forward (monotonic), resisting stale/out-of-order updates', () => {
+  it('last_message_at tracks the newest STORED message, resisting out-of-order delivery', () => {
     const s = new InboxStore(':memory:');
     const t = seedThread(s);
     s.recordInbound({ threadId: t.id, body: 'new', channelMessageId: 'm1', createdAt: '2027-01-01T00:00:00.000Z' });
-    s.setThreadSummary(t.id, { lastMessageAt: '2026-01-01T00:00:00.000Z' }); // stale channel summary
-    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2027-01-01T00:00:00.000Z');
+    s.recordInbound({ threadId: t.id, body: 'older, arrives late', channelMessageId: 'm2', createdAt: '2026-01-01T00:00:00.000Z' });
+    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2027-01-01T00:00:00.000Z'); // MAX keeps the newest
+  });
+
+  it('a channel unread update never bumps last_message_at past the newest stored message', () => {
+    const s = new InboxStore(':memory:');
+    const t = seedThread(s);
+    s.recordInbound({ threadId: t.id, body: 'last visible', channelMessageId: 'm1', createdAt: '2026-06-09T00:00:00.000Z' });
+    s.setThreadSummary(t.id, { unread: 3 }); // channel says "recent activity" — must NOT move the row time
+    const v = s.getThreadView(t.id)!;
+    expect(v.thread.lastMessageAt).toBe('2026-06-09T00:00:00.000Z'); // stays on the last shown bubble
+    expect(v.thread.unread).toBe(3);
   });
 
   it('a freshly-synced thread adopts its first message time even when it is in the past (no now() seed)', () => {
@@ -53,15 +63,15 @@ describe('InboxStore thread status', () => {
     expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-06-17T03:58:52.000Z');
   });
 
-  it('repairThreadLastMessageAt recomputes from stored messages, fixing a forward-corrupted stamp', () => {
+  it('repairThreadLastMessageAt recomputes last_message_at to the newest stored message (EPOCH if none)', () => {
     const s = new InboxStore(':memory:');
-    const t = seedThread(s);
-    s.recordInbound({ threadId: t.id, body: 'real', channelMessageId: 'm1', createdAt: '2026-06-01T00:00:00.000Z' });
-    s.setThreadSummary(t.id, { lastMessageAt: '2099-01-01T00:00:00.000Z' }); // bogus future stamp sticks (monotonic)
-    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2099-01-01T00:00:00.000Z');
-    const fixed = s.repairThreadLastMessageAt();
-    expect(fixed).toBeGreaterThanOrEqual(1);
-    expect(s.getThreadView(t.id)!.thread.lastMessageAt).toBe('2026-06-01T00:00:00.000Z'); // back to the real message time
+    const withMsgs = seedThread(s, 'k1');
+    s.recordInbound({ threadId: withMsgs.id, body: 'a', channelMessageId: 'm1', createdAt: '2026-06-01T00:00:00.000Z' });
+    s.recordInbound({ threadId: withMsgs.id, body: 'b', channelMessageId: 'm2', createdAt: '2026-06-05T00:00:00.000Z' });
+    const empty = seedThread(s, 'k2'); // no messages
+    s.repairThreadLastMessageAt();
+    expect(s.getThreadView(withMsgs.id)!.thread.lastMessageAt).toBe('2026-06-05T00:00:00.000Z'); // newest stored
+    expect(s.getThreadView(empty.id)!.thread.lastMessageAt < '2000-01-01').toBe(true); // EPOCH sentinel → blank in UI
   });
 
   it('exposes the last message direction on the thread view', () => {
