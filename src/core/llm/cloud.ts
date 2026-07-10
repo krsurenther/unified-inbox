@@ -40,7 +40,21 @@ abstract class HttpProvider implements LLMProvider {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeoutMs),
     })) as Response;
-    if (res.ok === false) throw new Error(`${this.id} ${res.status}: request failed`);
+    if (res.ok === false) {
+      // Surface the provider's actual error (e.g. "model no longer available", bad key) instead of a generic failure.
+      let detail = `HTTP ${res.status}`;
+      try {
+        const text = await res.text();
+        try {
+          detail = (JSON.parse(text) as { error?: { message?: string } })?.error?.message ?? text.slice(0, 200);
+        } catch {
+          detail = text.slice(0, 200) || detail;
+        }
+      } catch {
+        /* keep HTTP status */
+      }
+      throw new Error(`${this.id}: ${detail}`);
+    }
     return res;
   }
 
@@ -91,7 +105,7 @@ export class OpenAiProvider extends HttpProvider {
 export class GeminiProvider extends HttpProvider {
   readonly id = 'gemini';
   constructor(opts: CloudProviderOptions = {}) {
-    super(opts, 'GEMINI_API_KEY', 'gemini-2.0-flash');
+    super(opts, 'GEMINI_API_KEY', 'gemini-2.5-flash');
   }
   async draftReply(req: DraftRequest): Promise<DraftResult> {
     if (!this.apiKey) throw new Error('Gemini needs an API key — set GEMINI_API_KEY in .env.');

@@ -24,6 +24,9 @@ export function App() {
   const [waOpen, setWaOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [promptTarget, setPromptTarget] = useState('default');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [providerPrompts, setProviderPrompts] = useState<Record<string, string>>({});
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
@@ -189,6 +192,11 @@ export function App() {
   // AI picker — which model drafts replies.
   useEffect(() => { inbox.listProviders().then(setProviders).catch(() => {}); }, []);
 
+  // Load prompts when the AI settings modal opens.
+  useEffect(() => {
+    if (keysOpen) inbox.getPrompts().then((p) => { setSystemPrompt(p.systemPrompt); setProviderPrompts(p.providerPrompts); }).catch(() => {});
+  }, [keysOpen]);
+
   // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
   // so the risk bands and daily counters stay live as replies go out.
   const refreshGuard = useCallback(() => {
@@ -286,6 +294,18 @@ export function App() {
     flash(`${list.find((p) => p.id === id)?.label ?? id} key saved ✓`);
   };
 
+  const promptValue = promptTarget === 'default' ? systemPrompt : providerPrompts[promptTarget] ?? '';
+  const onPromptChange = (v: string) => {
+    if (promptTarget === 'default') setSystemPrompt(v);
+    else setProviderPrompts((s) => ({ ...s, [promptTarget]: v }));
+  };
+  const savePrompts = async () => {
+    const overrides = Object.fromEntries(Object.entries(providerPrompts).filter(([, v]) => v.trim())); // drop empties
+    await inbox.setPrompts(systemPrompt, overrides);
+    setProviderPrompts(overrides);
+    flash('Prompt saved ✓');
+  };
+
   const setStatus = async (threadId: string, status: 'open' | 'closed') => {
     await inbox.setThreadStatus(threadId, status);
     if (status === 'closed' && threadId === selectedId) setSelectedId(null); // it left the active view
@@ -333,7 +353,7 @@ export function App() {
             </label>
           )}
           <button className="btn ghost" onClick={() => setKeysOpen(true)}>
-            🔑 AI keys
+            ⚙️ AI settings
           </button>
           <button className="btn ghost" onClick={() => setWaOpen(true)}>
             ✆ WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' ✓' : ''}
@@ -606,9 +626,11 @@ export function App() {
         <div className="wa-overlay" onClick={() => setKeysOpen(false)}>
           <div className="wa-panel" onClick={(e) => e.stopPropagation()}>
             <div className="wa-head">
-              <span>AI provider keys</span>
+              <span>AI settings</span>
               <button className="btn ghost" onClick={() => setKeysOpen(false)}>✕</button>
             </div>
+
+            <div className="settings-section-title">API keys</div>
             <p className="wa-sub">
               Paste an API key to enable a cloud model. Keys are stored locally on this machine only — never
               in the code or synced anywhere. Local (Ollama) needs no key.
@@ -636,6 +658,31 @@ export function App() {
                   </div>
                 </div>
               ))}
+
+            <div className="settings-section-title">System prompt</div>
+            <p className="wa-sub">
+              This is what tells the AI how to reply. “Default” applies to every AI; pick a specific model to
+              give it its own prompt (leave that empty to fall back to Default).
+            </p>
+            <div className="prompt-editor">
+              <select value={promptTarget} onChange={(e) => setPromptTarget(e.target.value)}>
+                <option value="default">Default (all AIs)</option>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {providerPrompts[p.id]?.trim() ? ' · custom' : ''}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                value={promptValue}
+                onChange={(e) => onPromptChange(e.target.value)}
+                rows={12}
+                spellCheck={false}
+                placeholder={promptTarget === 'default' ? 'System prompt for all AIs…' : 'Override for this model — leave empty to use the Default prompt'}
+              />
+              <button className="btn primary" onClick={savePrompts}>Save prompt</button>
+            </div>
           </div>
         </div>
       )}

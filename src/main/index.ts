@@ -18,7 +18,7 @@ import { FakeAdapter } from '../core/channels/FakeAdapter';
 import { DuokeClient } from '../core/channels/duoke/DuokeClient';
 import { createDuokeAdapters, type DuokeAdapter } from '../core/channels/duoke/DuokeAdapter';
 import { DuokeSendDriver } from '../core/channels/duoke/DuokeSendDriver';
-import { AppConfigSchema, type AppConfig } from '../core/config/Config';
+import { AppConfigSchema, KRONOSHOP_PROMPT, LEGACY_SYSTEM_PROMPT, type AppConfig } from '../core/config/Config';
 import { WhatsAppManager } from './WhatsAppManager';
 import { SendQueue, type SendJob } from './SendQueue';
 
@@ -127,6 +127,11 @@ async function bootCore(): Promise<void> {
   configPath = process.env.UNIFIED_INBOX_CONFIG ?? join(app.getPath('userData'), 'config.json');
   if (existsSync(configPath)) {
     config = AppConfigSchema.parse(JSON.parse(readFileSync(configPath, 'utf8')));
+    // One-time upgrade of the untouched generic prompt to the Kronoshop default.
+    if (config.systemPrompt === LEGACY_SYSTEM_PROMPT) {
+      config.systemPrompt = KRONOSHOP_PROMPT;
+      persistConfig();
+    }
   } else {
     config = AppConfigSchema.parse(CONFIG_DEFAULTS);
     persistConfig();
@@ -271,6 +276,12 @@ function registerIpc(): void {
       persistConfig();
     }
     return providerList();
+  });
+  ipcMain.handle('prompts:get', () => ({ systemPrompt: config.systemPrompt, providerPrompts: config.providerPrompts ?? {} }));
+  ipcMain.handle('prompts:set', (_e, systemPrompt: string, providerPrompts: Record<string, string>) => {
+    config.systemPrompt = systemPrompt; // InboxService reads this live off the shared config object
+    config.providerPrompts = providerPrompts ?? {};
+    persistConfig();
   });
   ipcMain.handle('providers:setKey', (_e, id: string, key: string) => {
     if (['claude', 'openai', 'gemini'].includes(id)) {

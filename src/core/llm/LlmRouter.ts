@@ -27,6 +27,9 @@ export class LlmRouter {
   }
 
   draft(channelId: string, req: DraftRequest): Promise<DraftResult> {
-    return this.providerFor(channelId).draftReply(req);
+    const provider = this.providerFor(channelId);
+    // Per-provider prompt override (tailor each AI); else the global systemPrompt in req.
+    const override = this.config.providerPrompts?.[provider.id];
+    return provider.draftReply(override ? { ...req, systemPrompt: override } : req);
   }
 }

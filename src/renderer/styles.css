@@ -143,6 +143,45 @@ body {
 .key-input .btn {
   flex-shrink: 0;
 }
+.settings-section-title {
+  font-weight: 650;
+  font-size: 13px;
+  margin: 16px 0 4px;
+  color: var(--text);
+}
+.settings-section-title:first-of-type {
+  margin-top: 4px;
+}
+.prompt-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prompt-editor select,
+.prompt-editor textarea {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+}
+.prompt-editor textarea {
+  resize: vertical;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
+.prompt-editor select:focus,
+.prompt-editor textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.prompt-editor .btn {
+  align-self: flex-start;
+}
 .tab {
   flex: 1;
   border: 1px solid transparent;

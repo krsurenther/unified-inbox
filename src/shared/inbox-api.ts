@@ -52,6 +52,10 @@ export interface InboxApi {
   setProvider(id: string): Promise<ProviderInfo[]>;
   /** Save a cloud provider's API key (stored locally; takes effect immediately). Returns the fresh list. */
   setProviderKey(id: string, key: string): Promise<ProviderInfo[]>;
+  /** The global system prompt + any per-provider overrides. */
+  getPrompts(): Promise<{ systemPrompt: string; providerPrompts: Record<string, string> }>;
+  /** Save the global prompt + per-provider overrides (takes effect immediately). */
+  setPrompts(systemPrompt: string, providerPrompts: Record<string, string>): Promise<void>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
