@@ -24,6 +24,21 @@ describe('WhatsAppGuard', () => {
     ]);
   });
 
+  it('starts killed from initialKilled and reports kill changes', async () => {
+    const changes: boolean[] = [];
+    const g = new WhatsAppGuard({
+      numbers: [{ id: 'num-1', label: 'WA1' }],
+      countRecentSends: () => 0,
+      initialKilled: true,
+      onKillChange: (on) => changes.push(on),
+    });
+    expect(g.isKilled()).toBe(true);
+    expect((await g.policyFor('num-1')!.check()).allowed).toBe(false);
+    g.setKill(false);
+    expect(changes).toEqual([false]);
+    expect((await g.policyFor('num-1')!.check()).allowed).toBe(true);
+  });
+
   it('the kill switch flips status and makes every number\'s policy deny sends', async () => {
     const guard = new WhatsAppGuard({
       numbers: [{ id: 'num-1', label: 'WA1' }],

@@ -293,6 +293,19 @@ export class InboxStore {
     return rows.map((r) => this.toThreadView(this.mapThread(r)));
   }
 
+  // --- settings k/v (restart-durable app state) ---------------------------
+
+  getSetting(key: string): string | undefined {
+    const r = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined;
+    return r?.value;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(key, value);
+  }
+
   /** Total unread across all threads — the dock-badge source. */
   totalUnread(): number {
     return Number((this.db.prepare(`SELECT COALESCE(SUM(unread), 0) AS n FROM threads`).get() as { n: number }).n);

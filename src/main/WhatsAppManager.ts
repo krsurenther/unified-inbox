@@ -22,6 +22,10 @@ export interface WhatsAppManagerOptions {
   onChange: () => void;
   /** Anti-ban: max sends per number per rolling 24h. */
   dailyCap?: number;
+  /** Kill-switch state restored from persistence. */
+  initialKilled?: boolean;
+  /** Persist the kill switch whenever it flips. */
+  onKillChange?: (killed: boolean) => void;
 }
 
 /**
@@ -49,6 +53,8 @@ export class WhatsAppManager {
       dailyCap: opts.dailyCap,
       countRecentSends: (channelId) =>
         this.service.sendCountSince(channelId, new Date(Date.now() - DAY_MS).toISOString()),
+      initialKilled: opts.initialKilled,
+      onKillChange: opts.onKillChange,
     });
   }
 

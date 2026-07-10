@@ -85,3 +85,10 @@ CREATE TABLE IF NOT EXISTS send_audit (
 CREATE INDEX IF NOT EXISTS idx_send_audit_thread ON send_audit(thread_id);
 -- countSendsSince filters (channel_id, sent_at) on every send-policy check + guard poll.
 CREATE INDEX IF NOT EXISTS idx_send_audit_channel_time ON send_audit(channel_id, sent_at);
+
+-- Small key/value store for app state that must survive restarts (e.g. the WhatsApp
+-- kill switch). Values are strings; callers encode as needed.
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

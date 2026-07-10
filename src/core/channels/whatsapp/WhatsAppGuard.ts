@@ -25,6 +25,10 @@ export interface WhatsAppGuardOptions {
   countRecentSends: (channelId: string) => number;
   /** Per-number cap within the window. */
   dailyCap?: number;
+  /** Kill-switch state restored from persistence (default false). */
+  initialKilled?: boolean;
+  /** Called whenever the kill switch flips — persist it so a restart can't silently re-arm sending. */
+  onKillChange?: (killed: boolean) => void;
 }
 
 /**
@@ -34,10 +38,13 @@ export interface WhatsAppGuardOptions {
  * and hands each number's policy to that number's adapter.
  */
 export class WhatsAppGuard {
-  private killed = false;
+  private killed: boolean;
+  private readonly onKillChange?: (killed: boolean) => void;
   private readonly entries = new Map<string, { label: string; policy: SendPolicy }>();
 
   constructor(opts: WhatsAppGuardOptions) {
+    this.killed = opts.initialKilled ?? false;
+    this.onKillChange = opts.onKillChange;
     const cap = opts.dailyCap ?? 200;
     for (const n of opts.numbers) {
       const channelId = `whatsapp:${n.id}`;
@@ -63,6 +70,7 @@ export class WhatsAppGuard {
 
   setKill(on: boolean): void {
     this.killed = on;
+    this.onKillChange?.(on);
   }
 
   async status(): Promise<WaGuardStatus> {

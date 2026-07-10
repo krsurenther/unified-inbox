@@ -233,6 +233,8 @@ app.whenReady().then(async () => {
     numbers: config.whatsapp.numbers,
     dataPath: join(process.cwd(), '.wwebjs_auth'),
     dailyCap: config.whatsapp.dailyCap,
+    initialKilled: store.getSetting('wa.kill') === '1', // restore across restarts
+    onKillChange: (on) => store.setSetting('wa.kill', on ? '1' : '0'),
     onChange: () => win?.webContents.send('wa:update', waManager?.list() ?? []),
   });
   waManager.autoStartLinked();
