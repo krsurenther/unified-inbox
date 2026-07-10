@@ -20,6 +20,12 @@ const api: InboxApi = {
 
   whatsappGuard: () => ipcRenderer.invoke('wa:guardStatus'),
   setWhatsappKill: (on) => ipcRenderer.invoke('wa:setKill', on),
+
+  onSelectThread: (cb) => {
+    const listener = (_e: unknown, threadId: string) => cb(threadId);
+    ipcRenderer.on('inbox:select', listener);
+    return () => ipcRenderer.removeListener('inbox:select', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('inbox', api);

@@ -40,4 +40,7 @@ export interface InboxApi {
   whatsappGuard(): Promise<WaGuardStatus>;
   /** Engage/release the kill switch that pauses ALL WhatsApp sending. Returns fresh status. */
   setWhatsappKill(on: boolean): Promise<WaGuardStatus>;
+
+  /** Subscribe to main-process "open this thread" pushes (notification clicks). Returns unsubscribe. */
+  onSelectThread(cb: (threadId: string) => void): () => void;
 }

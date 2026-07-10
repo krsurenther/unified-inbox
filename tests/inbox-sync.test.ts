@@ -75,6 +75,22 @@ describe('InboxService.syncChannel (pull-style adapter)', () => {
     expect(service.getHistory(tid)).toHaveLength(3);
   });
 
+  it('fires onInbound for each new inbound via syncChannel, but not on re-sync', async () => {
+    const events: Array<{ body: string }> = [];
+    const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
+    const store = new InboxStore(':memory:');
+    const router = new LlmRouter(config, { echo: new EchoProvider() });
+    const service = new InboxService({ store, router, config, onInbound: (e) => events.push(e) });
+    service.registerChannel(pullAdapter());
+
+    await service.syncChannel('duoke:s1');
+    // the two inbound messages fire, the outbound does not
+    expect(events.map((e) => e.body)).toEqual(['Hi, is the red one in stock?', 'Great, 2 please']);
+
+    await service.syncChannel('duoke:s1'); // re-sync inserts nothing
+    expect(events).toHaveLength(2);
+  });
+
   it('unregisterChannel removes a channel from the live registry (history kept)', async () => {
     const { service } = makeService();
     service.registerChannel(pullAdapter());

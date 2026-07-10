@@ -5,10 +5,22 @@ import type { LlmRouter } from './llm/LlmRouter';
 import type { InboxStore } from './store/InboxStore';
 import type { Draft, Message, ThreadView } from './types';
 
+/** Emitted once per newly-inserted inbound message (push or sync path) — drives notifications. */
+export interface InboundEvent {
+  threadId: string;
+  channelId: string;
+  channelLabel: string;
+  customerName: string;
+  body: string;
+  at: string;
+}
+
 export interface InboxServiceDeps {
   store: InboxStore;
   router: LlmRouter;
   config: AppConfig;
+  /** Fired once per NEW inbound message. Best-effort side channel (notifications/badge). */
+  onInbound?: (e: InboundEvent) => void;
 }
 
 /**
@@ -23,12 +35,14 @@ export class InboxService {
   private readonly store: InboxStore;
   private readonly router: LlmRouter;
   private readonly config: AppConfig;
+  private readonly onInbound?: (e: InboundEvent) => void;
   private readonly channels = new Map<string, ChannelAdapter>();
 
   constructor(deps: InboxServiceDeps) {
     this.store = deps.store;
     this.router = deps.router;
     this.config = deps.config;
+    this.onInbound = deps.onInbound;
   }
 
   /** Register a channel adapter and start routing its inbound messages into the pipeline. */
@@ -66,7 +80,15 @@ export class InboxService {
       authorName: msg.from.name,
       createdAt: msg.timestamp,
     });
-    if (!inserted) return; // duplicate delivery — nothing new to draft
+    if (!inserted) return; // duplicate delivery — nothing new to draft or notify
+    this.onInbound?.({
+      threadId: thread.id,
+      channelId: msg.channelId,
+      channelLabel: this.channels.get(msg.channelId)?.channel.label ?? msg.channelId,
+      customerName: msg.from.name ?? msg.from.externalId,
+      body: msg.body,
+      at: msg.timestamp ?? new Date().toISOString(),
+    });
     try {
       await this.generateDraft(thread.id);
     } catch {
@@ -129,7 +151,19 @@ export class InboxService {
           authorName: m.authorName,
           createdAt: m.timestamp,
         });
-        if (inserted) messages++;
+        if (inserted) {
+          messages++;
+          if (m.direction === 'inbound') {
+            this.onInbound?.({
+              threadId: thread.id,
+              channelId,
+              channelLabel: adapter.channel.label,
+              customerName: d.participant.name ?? d.participant.externalId,
+              body: m.body,
+              at: m.timestamp ?? new Date().toISOString(),
+            });
+          }
+        }
       }
       this.store.setThreadSummary(thread.id, { unread: d.unread, lastMessageAt: d.lastMessageAt });
 

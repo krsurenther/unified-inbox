@@ -293,6 +293,11 @@ export class InboxStore {
     return rows.map((r) => this.toThreadView(this.mapThread(r)));
   }
 
+  /** Total unread across all threads — the dock-badge source. */
+  totalUnread(): number {
+    return Number((this.db.prepare(`SELECT COALESCE(SUM(unread), 0) AS n FROM threads`).get() as { n: number }).n);
+  }
+
   getThreadView(threadId: string): ThreadView | undefined {
     const row = this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(threadId) as
       | Record<string, unknown>

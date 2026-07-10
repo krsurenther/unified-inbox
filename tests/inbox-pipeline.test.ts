@@ -93,6 +93,24 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('fires onInbound exactly once per NEW inbound message (not on duplicates)', async () => {
+    const events: Array<{ threadId: string; customerName: string; body: string }> = [];
+    const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
+    const store = new InboxStore(':memory:');
+    const router = new LlmRouter(config, { echo: new EchoProvider() });
+    const service = new InboxService({ store, router, config, onInbound: (e) => events.push(e) });
+    const fake = new FakeAdapter({ id: 'fake:demo', label: 'Demo channel' });
+    service.registerChannel(fake);
+    await service.start();
+
+    const inbound = { channelId: 'fake:demo', from: { externalId: 'c1', name: 'Aisha' }, threadKey: 't1', body: 'hello?', channelMessageId: 'dup-1', timestamp: new Date().toISOString() };
+    await service.ingest(inbound);
+    await service.ingest(inbound); // duplicate delivery — must not re-fire
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ customerName: 'Aisha', body: 'hello?' });
+    expect(store.totalUnread()).toBe(1);
+  });
+
   it('exposes a rolling send count per channel (feeds the WhatsApp anti-ban cap)', async () => {
     const { service, fake } = makeService();
     await service.start();

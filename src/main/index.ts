@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification } from 'electron';
 import { setDefaultResultOrder } from 'node:dns';
 import { join } from 'node:path';
 
@@ -7,7 +7,7 @@ import { join } from 'node:path';
 // the localhost CDP send driver).
 setDefaultResultOrder('ipv4first');
 import { InboxStore } from '../core/store/InboxStore';
-import { InboxService } from '../core/InboxService';
+import { InboxService, type InboundEvent } from '../core/InboxService';
 import { LlmRouter } from '../core/llm/LlmRouter';
 import { EchoProvider } from '../core/llm/EchoProvider';
 import { OllamaProvider } from '../core/llm/OllamaProvider';
@@ -19,6 +19,7 @@ import { AppConfigSchema, type AppConfig } from '../core/config/Config';
 import { WhatsAppManager } from './WhatsAppManager';
 
 let service: InboxService;
+let store: InboxStore;
 let config: AppConfig;
 let fake: FakeAdapter;
 let simSeq = 0;
@@ -69,12 +70,12 @@ async function bootCore(): Promise<void> {
   });
 
   const dbPath = join(app.getPath('userData'), 'inbox.sqlite');
-  const store = new InboxStore(dbPath);
+  store = new InboxStore(dbPath);
   const router = new LlmRouter(config, {
     echo: new EchoProvider(),
     ollama: new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL }),
   });
-  service = new InboxService({ store, router, config });
+  service = new InboxService({ store, router, config, onInbound: notifyInbound });
 
   fake = new FakeAdapter({ id: 'fake:demo', label: 'Demo channel' });
   service.registerChannel(fake);
@@ -142,13 +143,38 @@ async function syncDuoke(): Promise<void> {
   }
 }
 
+/** Reflect total unread onto the macOS dock badge. */
+function updateBadge(): void {
+  if (process.platform !== 'darwin') return;
+  const n = store.totalUnread();
+  app.dock?.setBadge(n > 0 ? String(n) : '');
+}
+
+/** Notify the team of a fresh inbound (and keep the badge current). */
+function notifyInbound(e: InboundEvent): void {
+  updateBadge();
+  // G2: only messages fresher than 10 min — suppresses the notification storm when
+  // a number links or a channel backfills its history.
+  if (Date.now() - new Date(e.at).getTime() > 10 * 60_000) return;
+  if (!Notification.isSupported()) return;
+  const note = new Notification({ title: `${e.customerName} · ${e.channelLabel}`, body: e.body.slice(0, 120) });
+  note.on('click', () => {
+    win?.show();
+    win?.focus();
+    win?.webContents.send('inbox:select', e.threadId);
+  });
+  note.show();
+}
+
 function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
-  ipcMain.handle('inbox:approveAndSend', (_e, threadId: string, body: string) =>
-    service.approveAndSend(threadId, { body, approvedBy: 'human:ui' }),
-  );
+  ipcMain.handle('inbox:approveAndSend', async (_e, threadId: string, body: string) => {
+    const r = await service.approveAndSend(threadId, { body, approvedBy: 'human:ui' });
+    updateBadge(); // the outbound cleared this thread's unread
+    return r;
+  });
   ipcMain.handle('inbox:simulateIncoming', async () => {
     const pick = SIM_POOL[simSeq++ % SIM_POOL.length]!;
     await fake.inject({
@@ -193,6 +219,7 @@ app.whenReady().then(async () => {
   await bootCore();
   registerIpc();
   createWindow();
+  updateBadge(); // reflect any already-unread threads on launch
   // WhatsApp: per-number clients; linked sessions auto-start, others link in-app.
   waManager = new WhatsAppManager({
     service,

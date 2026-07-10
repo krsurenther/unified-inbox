@@ -103,6 +103,9 @@ export function App() {
     return inbox.onWaUpdate(setWaNumbers);
   }, []);
 
+  // Open the thread when a macOS notification is clicked.
+  useEffect(() => inbox.onSelectThread((id) => setSelectedId(id)), []);
+
   // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
   // so the risk bands and daily counters stay live as replies go out.
   const refreshGuard = useCallback(() => {
