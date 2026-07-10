@@ -82,8 +82,8 @@ export class DuokeSendDriver {
     });
   }
 
-  private async evaluate<T>(expression: string): Promise<T> {
-    const res = (await this.cmd('Runtime.evaluate', { expression, returnByValue: true })) as {
+  protected async evaluate<T>(expression: string): Promise<T> {
+    const res = (await this.cmd('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })) as {
       result?: { result?: { value?: T }; exceptionDetails?: { text?: string } };
     };
     if (res.result?.exceptionDetails) {
@@ -98,6 +98,35 @@ export class DuokeSendDriver {
       `(() => { let s=null; for (const el of document.querySelectorAll('*')) { if (el.__vue__ && el.__vue__.$store) { s = el.__vue__.$store; break; } } return s && s.state && s.state.Chat ? s.state.Chat.conversationId : null; })()`,
     );
     return cid ?? undefined;
+  }
+
+  /**
+   * Ask Duoke itself to open a conversation, the way a human click would:
+   * click the rendered session row if present, else dispatch Duoke's own
+   * 'Chat/select-session' store action for a session in its loaded list.
+   * Resolves true only once Duoke's store confirms the target is active.
+   * Returns false when Duoke doesn't have the session loaded at all (old
+   * conversation outside the list) — the caller falls back to a clear error.
+   */
+  async openConversation(conversationId: string): Promise<boolean> {
+    await this.connect();
+    if ((await this.currentConversationId()) === conversationId) return true;
+    return this.evaluate<boolean>(`(async () => {
+      let s=null; for (const el of document.querySelectorAll('*')) { if (el.__vue__ && el.__vue__.$store) { s = el.__vue__.$store; break; } }
+      if (!s || !s.state || !s.state.Chat) return false;
+      const TARGET=${JSON.stringify(conversationId)};
+      const waitCid = async () => { for (let i=0;i<24;i++){ if (s.state.Chat.conversationId===TARGET) return true; await new Promise(x=>setTimeout(x,250)); } return false; };
+      if (s.state.Chat.conversationId === TARGET) return true;
+      for (const li of document.querySelectorAll('li')) {
+        const src = li.__vue__ && li.__vue__.$props && li.__vue__.$props.source;
+        if (src && src.conversationId === TARGET) { li.click(); return waitCid(); }
+      }
+      const ss = s.state.Chat.sessions;
+      const flat = (Array.isArray(ss) ? ss : Object.values(ss ?? {})).flat();
+      const sess = flat.find((x) => x && x.conversationId === TARGET);
+      if (sess) { try { await s.dispatch('Chat/select-session', sess); } catch (e) { /* fall through to verify */ } return waitCid(); }
+      return false;
+    })()`);
   }
 
   /** What conversation + compose text Duoke is currently showing (best effort). */
@@ -135,15 +164,20 @@ export class DuokeSendDriver {
   }
 
   /**
-   * Send a reply into a specific Duoke conversation. Refuses unless that exact
-   * conversation is the one currently open in Duoke.
+   * Send a reply into a specific Duoke conversation. Auto-opens the target
+   * conversation in Duoke first; refuses unless Duoke's own store confirms that
+   * exact conversation is active (so it can never deliver to the wrong customer).
    */
   async send(opts: { conversationId: string; text: string }): Promise<{ sent: boolean }> {
     await this.connect();
-    const cur = await this.currentConversationId();
+    let cur = await this.currentConversationId();
+    if (cur !== opts.conversationId) {
+      await this.openConversation(opts.conversationId); // result re-verified below from the store
+      cur = await this.currentConversationId();
+    }
     if (cur !== opts.conversationId) {
       throw new Error(
-        `Duoke's active conversation is ${cur ?? 'none'}, not the target ${opts.conversationId}. Open it in Duoke first.`,
+        `Couldn't auto-open conversation ${opts.conversationId} in Duoke (it shows ${cur ?? 'none'} — probably an old chat outside its loaded list). Open it in Duoke, then Approve & Send again.`,
       );
     }
     if (!(await this.setComposeText(opts.text))) {
