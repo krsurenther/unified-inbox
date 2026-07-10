@@ -119,6 +119,8 @@ export const AppConfigSchema = z.object({
   defaultProvider: z.string().default('echo'),
   /** Per-provider API keys entered in-app (local file only; env vars are the fallback). */
   apiKeys: z.record(z.string(), z.string()).default({}),
+  /** Hub MCP connector (Claude only): remote tool server the model may call while drafting. */
+  mcp: z.object({ url: z.string().default(''), token: z.string().default('') }).default({ url: '', token: '' }),
   channels: z.record(z.string(), ChannelConfigSchema).default({}),
   whatsapp: z
     .object({

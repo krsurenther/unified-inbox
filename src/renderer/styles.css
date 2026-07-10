@@ -158,7 +158,8 @@ body {
   gap: 8px;
 }
 .prompt-editor select,
-.prompt-editor textarea {
+.prompt-editor textarea,
+.prompt-editor input {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -175,7 +176,8 @@ body {
   white-space: pre-wrap;
 }
 .prompt-editor select:focus,
-.prompt-editor textarea:focus {
+.prompt-editor textarea:focus,
+.prompt-editor input:focus {
   outline: none;
   border-color: var(--accent);
 }

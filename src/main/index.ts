@@ -94,7 +94,7 @@ function makeProvider(id: string): LLMProvider {
     case 'ollama':
       return new OllamaProvider({ baseUrl: process.env.OLLAMA_BASE_URL, model: process.env.OLLAMA_MODEL });
     case 'claude':
-      return new ClaudeProvider({ apiKey: key });
+      return new ClaudeProvider({ apiKey: key, mcp: config.mcp?.url ? config.mcp : undefined });
     case 'openai':
       return new OpenAiProvider({ apiKey: key });
     case 'gemini':
@@ -276,6 +276,16 @@ function registerIpc(): void {
       persistConfig();
     }
     return providerList();
+  });
+  ipcMain.handle('mcp:get', () => ({ url: config.mcp?.url ?? '', hasToken: !!config.mcp?.token }));
+  ipcMain.handle('mcp:set', (_e, url: string, token: string) => {
+    const u = url.trim();
+    // Empty token box = keep the saved token (paste only to replace); clearing the url disables it.
+    const t = !u ? '' : token.trim() || (config.mcp?.token ?? '');
+    config.mcp = { url: u, token: t };
+    persistConfig();
+    providers.claude = makeProvider('claude'); // rebuild so the connector applies immediately
+    return { url: config.mcp.url, hasToken: !!config.mcp.token };
   });
   ipcMain.handle('prompts:get', () => ({ systemPrompt: config.systemPrompt, providerPrompts: config.providerPrompts ?? {} }));
   ipcMain.handle('prompts:set', (_e, systemPrompt: string, providerPrompts: Record<string, string>) => {

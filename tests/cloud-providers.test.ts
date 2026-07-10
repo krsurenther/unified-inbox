@@ -42,6 +42,29 @@ describe('ClaudeProvider', () => {
     const { fn } = mockJson({});
     await expect(new ClaudeProvider({ apiKey: '', fetchFn: fn }).draftReply(req)).rejects.toThrow(/ANTHROPIC_API_KEY/i);
   });
+  it('attaches the Hub MCP connector when configured, and reads the answer past the tool blocks', async () => {
+    const { fn, calls } = mockJson({
+      content: [
+        { type: 'mcp_tool_use', name: 'stock_levels' },
+        { type: 'mcp_tool_result' },
+        { type: 'text', text: 'ada 2 unit kat Temerloh 👍' },
+      ],
+    });
+    const res = await new ClaudeProvider({ apiKey: 'sk-ant-x', fetchFn: fn, mcp: { url: 'https://hub.example/mcp', token: 'svc-tok' } }).draftReply(req);
+    expect(res.text).toBe('ada 2 unit kat Temerloh 👍'); // final text, not the tool-use blocks
+    expect(calls[0]!.headers['anthropic-beta']).toContain('mcp-client-2025-11-20');
+    const body = calls[0]!.body as { mcp_servers: Array<Record<string, unknown>>; tools: Array<Record<string, unknown>> };
+    expect(body.mcp_servers[0]).toMatchObject({ type: 'url', url: 'https://hub.example/mcp', name: 'kronoshop-hub', authorization_token: 'svc-tok' });
+    expect(body.tools[0]).toEqual({ type: 'mcp_toolset', mcp_server_name: 'kronoshop-hub' });
+  });
+  it('omits MCP fields (and the beta header) when the Hub MCP is not configured', async () => {
+    const { fn, calls } = mockJson({ content: [{ type: 'text', text: 'hi' }] });
+    await new ClaudeProvider({ apiKey: 'sk-ant-x', fetchFn: fn }).draftReply(req);
+    const body = calls[0]!.body as Record<string, unknown>;
+    expect(body.mcp_servers).toBeUndefined();
+    expect(body.tools).toBeUndefined();
+    expect(calls[0]!.headers['anthropic-beta']).toBeUndefined();
+  });
 });
 
 describe('OpenAiProvider', () => {

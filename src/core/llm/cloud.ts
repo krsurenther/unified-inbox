@@ -6,6 +6,8 @@ export interface CloudProviderOptions {
   model?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  /** Remote MCP server the model may call during drafting (Claude only). url='' disables it. */
+  mcp?: { url: string; token?: string };
 }
 
 /**
@@ -69,18 +71,34 @@ abstract class HttpProvider implements LLMProvider {
 
 export class ClaudeProvider extends HttpProvider {
   readonly id = 'claude';
+  private readonly mcp?: { url: string; token?: string };
   constructor(opts: CloudProviderOptions = {}) {
     super(opts, 'ANTHROPIC_API_KEY', 'claude-haiku-4-5');
+    this.mcp = opts.mcp?.url ? opts.mcp : undefined; // only wire the connector when a URL is set
   }
   async draftReply(req: DraftRequest): Promise<DraftResult> {
-    if (!this.apiKey) throw new Error('Claude needs an API key — set ANTHROPIC_API_KEY in .env.');
-    const res = await this.post(
-      'https://api.anthropic.com/v1/messages',
-      { 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' },
-      { model: this.model, max_tokens: 500, system: buildSystemPrompt(req), messages: buildChatTurns(req) },
-    );
-    const data = (await res.json()) as { content?: Array<{ text?: string }> };
-    return this.done(data.content?.[0]?.text ?? '');
+    if (!this.apiKey) throw new Error('Claude needs an API key — add it via ⚙️ AI settings (or ANTHROPIC_API_KEY).');
+    const headers: Record<string, string> = { 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' };
+    const body: Record<string, unknown> = {
+      model: this.model,
+      max_tokens: 500,
+      system: buildSystemPrompt(req),
+      messages: buildChatTurns(req),
+    };
+    if (this.mcp) {
+      // Remote MCP connector: Anthropic runs the Hub tool loop (stock/pricing/order/repair)
+      // server-side and returns the final text. Requires the beta header + a matching mcp_toolset.
+      headers['anthropic-beta'] = 'mcp-client-2025-11-20';
+      body.mcp_servers = [
+        { type: 'url', url: this.mcp.url, name: 'kronoshop-hub', ...(this.mcp.token ? { authorization_token: this.mcp.token } : {}) },
+      ];
+      body.tools = [{ type: 'mcp_toolset', mcp_server_name: 'kronoshop-hub' }];
+    }
+    const res = await this.post('https://api.anthropic.com/v1/messages', headers, body);
+    const data = (await res.json()) as { content?: Array<{ type?: string; text?: string }> };
+    // With tool use the content interleaves mcp_tool_use/result blocks — the reply is the last text block.
+    const text = [...(data.content ?? [])].reverse().find((b) => b.type === 'text')?.text ?? '';
+    return this.done(text);
   }
 }
 

@@ -27,6 +27,9 @@ export function App() {
   const [promptTarget, setPromptTarget] = useState('default');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [providerPrompts, setProviderPrompts] = useState<Record<string, string>>({});
+  const [mcpUrl, setMcpUrl] = useState('');
+  const [mcpToken, setMcpToken] = useState('');
+  const [mcpHasToken, setMcpHasToken] = useState(false);
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
@@ -192,9 +195,11 @@ export function App() {
   // AI picker — which model drafts replies.
   useEffect(() => { inbox.listProviders().then(setProviders).catch(() => {}); }, []);
 
-  // Load prompts when the AI settings modal opens.
+  // Load prompts + Hub MCP config when the AI settings modal opens.
   useEffect(() => {
-    if (keysOpen) inbox.getPrompts().then((p) => { setSystemPrompt(p.systemPrompt); setProviderPrompts(p.providerPrompts); }).catch(() => {});
+    if (!keysOpen) return;
+    inbox.getPrompts().then((p) => { setSystemPrompt(p.systemPrompt); setProviderPrompts(p.providerPrompts); }).catch(() => {});
+    inbox.getMcp().then((m) => { setMcpUrl(m.url); setMcpHasToken(m.hasToken); setMcpToken(''); }).catch(() => {});
   }, [keysOpen]);
 
   // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
@@ -304,6 +309,13 @@ export function App() {
     await inbox.setPrompts(systemPrompt, overrides);
     setProviderPrompts(overrides);
     flash('Prompt saved ✓');
+  };
+
+  const saveMcp = async () => {
+    const m = await inbox.setMcp(mcpUrl, mcpToken); // blank token box keeps the saved token
+    setMcpHasToken(m.hasToken);
+    setMcpToken('');
+    flash(m.url ? 'Hub tools connected ✓' : 'Hub tools disabled');
   };
 
   const setStatus = async (threadId: string, status: 'open' | 'closed') => {
@@ -697,6 +709,30 @@ export function App() {
                 placeholder={promptTarget === 'default' ? 'System prompt for all AIs…' : 'Override for this model — leave empty to use the Default prompt'}
               />
               <button className="btn primary" onClick={savePrompts}>Save prompt</button>
+            </div>
+
+            <div className="settings-section-title">Hub tools (MCP) {mcpUrl && mcpHasToken ? <span className="wa-badge ready">connected ✓</span> : null}</div>
+            <p className="wa-sub">
+              Let the AI look up live stock, pricing, order and repair status from your Kronoshop Hub while it
+              drafts. Paste your Hub MCP URL and a service token. Works with <strong>Claude</strong> only — pick
+              Claude as the AI to use it. Stored locally; the token is never shown again.
+            </p>
+            <div className="prompt-editor">
+              <input
+                type="url"
+                placeholder="https://hub.kronoshop.my/mcp"
+                value={mcpUrl}
+                onChange={(e) => setMcpUrl(e.target.value)}
+                spellCheck={false}
+              />
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={mcpHasToken ? '•••••• saved — paste to replace' : 'Hub MCP service token'}
+                value={mcpToken}
+                onChange={(e) => setMcpToken(e.target.value)}
+              />
+              <button className="btn primary" onClick={saveMcp}>{mcpUrl ? 'Save Hub tools' : 'Disable Hub tools'}</button>
             </div>
           </div>
         </div>

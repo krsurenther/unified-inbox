@@ -56,6 +56,10 @@ export interface InboxApi {
   getPrompts(): Promise<{ systemPrompt: string; providerPrompts: Record<string, string> }>;
   /** Save the global prompt + per-provider overrides (takes effect immediately). */
   setPrompts(systemPrompt: string, providerPrompts: Record<string, string>): Promise<void>;
+  /** Hub MCP connector config (Claude only). Token is write-only — never returned. */
+  getMcp(): Promise<{ url: string; hasToken: boolean }>;
+  /** Save the Hub MCP url + token (stored locally; applies immediately to Claude). */
+  setMcp(url: string, token: string): Promise<{ url: string; hasToken: boolean }>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
