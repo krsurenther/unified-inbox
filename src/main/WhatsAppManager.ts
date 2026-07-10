@@ -76,6 +76,17 @@ export class WhatsAppManager {
     this.onChange();
   }
 
+  /** Give a number a friendly label (e.g. "Sales", "Repair") — updates its chip everywhere. */
+  rename(id: string, label: string): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    e.cfg = { ...e.cfg, label };
+    e.state = { ...e.state, label };
+    if (e.adapter) e.adapter.channel.label = label; // stop re-registration reverting the label
+    this.service.renameChannel(`whatsapp:${id}`, label);
+    this.onChange();
+  }
+
   /** Human-pacing delay (ms) a send on this channel will incur — 0 for non-WhatsApp channels. */
   etaFor(channelId: string, body: string): number {
     if (!channelId.startsWith('whatsapp:')) return 0;

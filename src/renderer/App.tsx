@@ -319,6 +319,14 @@ export function App() {
     flash(muted ? '🔇 Muted — no AI drafts or alerts' : 'Unmuted');
   };
 
+  const renameWa = async (id: string, label: string) => {
+    const l = label.trim();
+    if (!l) return;
+    await inbox.renameWhatsApp(id, l);
+    await refreshThreads(); // update the channel chip on every thread
+    flash('Number renamed ✓');
+  };
+
   const disconnectWa = async (id: string, linked: boolean) => {
     const msg = linked
       ? "Unlink this WhatsApp number? This removes it from your phone's Linked Devices and deletes all its conversations from this inbox. Chats still on the phone re-import if you re-link."
@@ -572,7 +580,14 @@ export function App() {
             {waNumbers.map((n) => (
               <div key={n.id} className="wa-row">
                 <div className="wa-row-head">
-                  <span className="wa-label">{n.label}</span>
+                  <input
+                    className="wa-label-input"
+                    key={n.label}
+                    defaultValue={n.label}
+                    title="Rename this number (Enter to save)"
+                    onBlur={(e) => { if (e.target.value.trim() && e.target.value.trim() !== n.label) void renameWa(n.id, e.target.value); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  />
                   <span className={`wa-badge ${n.state}`}>
                     {n.state}
                     {n.threads != null ? ` · ${n.threads} chats` : ''}

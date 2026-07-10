@@ -27,6 +27,7 @@ const api: InboxApi = {
   listWhatsApp: () => ipcRenderer.invoke('wa:list'),
   connectWhatsApp: (id) => ipcRenderer.invoke('wa:connect', id),
   disconnectWhatsApp: (id) => ipcRenderer.invoke('wa:disconnect', id),
+  renameWhatsApp: (id, label) => ipcRenderer.invoke('wa:rename', id, label),
   onWaUpdate: (cb) => {
     const listener = (_e: unknown, states: WaNumberState[]) => cb(states);
     ipcRenderer.on('wa:update', listener);

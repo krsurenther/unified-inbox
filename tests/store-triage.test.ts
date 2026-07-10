@@ -7,6 +7,17 @@ function seedThread(s: InboxStore, key = 'k1') {
   return s.findOrCreateThread('c', cu.id, key);
 }
 
+describe('InboxStore.renameChannel', () => {
+  it('renames a channel so its thread views show the new label', () => {
+    const s = new InboxStore(':memory:');
+    s.upsertChannel({ id: 'whatsapp:num-1', kind: 'whatsapp', label: 'WhatsApp · 1' });
+    const c = s.upsertCustomer('whatsapp:num-1', '60123', 'A');
+    const t = s.findOrCreateThread('whatsapp:num-1', c.id, '60123@c.us');
+    s.renameChannel('whatsapp:num-1', 'Sales line');
+    expect(s.getThreadView(t.id)!.channel.label).toBe('Sales line');
+  });
+});
+
 describe('InboxStore thread status', () => {
   it('sets status and rejects invalid values', () => {
     const s = new InboxStore(':memory:');

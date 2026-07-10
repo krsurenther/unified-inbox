@@ -75,6 +75,8 @@ export interface InboxApi {
   connectWhatsApp(id: string): Promise<void>;
   /** Unlink a number (logout + clear session); historical threads are kept. */
   disconnectWhatsApp(id: string): Promise<void>;
+  /** Give a WhatsApp number a friendly label (persists; updates its chip everywhere). */
+  renameWhatsApp(id: string, label: string): Promise<void>;
   /** Subscribe to WhatsApp connection/QR updates. Returns an unsubscribe fn. */
   onWaUpdate(cb: (states: WaNumberState[]) => void): () => void;
 

@@ -316,6 +316,14 @@ function registerIpc(): void {
   ipcMain.handle('wa:list', () => waManager?.list() ?? []);
   ipcMain.handle('wa:connect', (_e, id: string) => waManager?.connect(id));
   ipcMain.handle('wa:disconnect', (_e, id: string) => waManager?.disconnect(id));
+  ipcMain.handle('wa:rename', (_e, id: string, label: string) => {
+    const name = label.trim();
+    if (!name) return;
+    const n = config.whatsapp.numbers.find((x) => x.id === id);
+    if (n) n.label = name;
+    persistConfig(); // survives restart
+    waManager?.rename(id, name);
+  });
   ipcMain.handle('wa:guardStatus', () => waManager?.guardStatus() ?? { killed: false, numbers: [] });
   ipcMain.handle('wa:setKill', (_e, on: boolean) => {
     waManager?.setKillSwitch(on);

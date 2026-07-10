@@ -75,6 +75,11 @@ export class InboxStore {
       .run(ch.id, ch.kind, ch.label, nowIso());
   }
 
+  /** Rename a channel (e.g. a WhatsApp number label) — reflected in every thread's chip. */
+  renameChannel(channelId: string, label: string): void {
+    this.db.prepare(`UPDATE channels SET label = ? WHERE id = ?`).run(label, channelId);
+  }
+
   upsertCustomer(channelId: string, externalId: string, name?: string, phone?: string): Customer {
     const existing = this.db
       .prepare(`SELECT * FROM customers WHERE channel_id = ? AND external_id = ?`)

@@ -302,6 +302,11 @@ export class InboxService {
     this.store.markRead(threadId);
   }
 
+  /** Rename a channel (e.g. relabel a WhatsApp number) — updates its chip on every thread. */
+  renameChannel(channelId: string, label: string): void {
+    this.store.renameChannel(channelId, label);
+  }
+
   /** Set a thread's workflow status (open | snoozed | closed). */
   setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): void {
     this.store.setThreadStatus(threadId, status);
