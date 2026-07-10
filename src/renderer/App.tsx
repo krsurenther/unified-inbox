@@ -56,6 +56,7 @@ export function App() {
       return;
     }
     let cancelled = false;
+    void inbox.markRead(selectedId).then(() => refreshThreads()); // clear the badge on open
     (async () => {
       const [h, all] = await Promise.all([inbox.getHistory(selectedId), inbox.listThreads()]);
       if (cancelled) return;

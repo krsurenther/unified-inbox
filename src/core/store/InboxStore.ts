@@ -342,6 +342,11 @@ export class InboxStore {
       .run(key, value);
   }
 
+  /** Clear a thread's unread (local read state; never sends a channel read receipt). */
+  markRead(threadId: string): void {
+    this.db.prepare(`UPDATE threads SET unread = 0 WHERE id = ?`).run(threadId);
+  }
+
   /** Total unread across all threads — the dock-badge source. */
   totalUnread(): number {
     return Number((this.db.prepare(`SELECT COALESCE(SUM(unread), 0) AS n FROM threads`).get() as { n: number }).n);

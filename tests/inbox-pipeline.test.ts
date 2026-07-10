@@ -93,6 +93,17 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('markRead clears a thread\'s unread (local only — no channel receipt)', async () => {
+    const { service, store } = makeService();
+    await service.start();
+    await service.ingest({ channelId: 'fake:demo', from: { externalId: 'c1', name: 'A' }, threadKey: 't1', body: 'hi', channelMessageId: 'm1' });
+    const threadId = service.listThreads()[0]!.thread.id;
+    expect(store.totalUnread()).toBe(1);
+    service.markRead(threadId);
+    expect(store.totalUnread()).toBe(0);
+    expect(service.listThreads()[0]!.thread.unread).toBe(0);
+  });
+
   it('dispose() stops every adapter (kills WA Chromes) and closes the store', async () => {
     const { service, store } = makeService();
     let stopped = false;

@@ -249,6 +249,11 @@ export class InboxService {
     return this.store.purgeChannelData(channelId);
   }
 
+  /** Mark a thread read locally (clears its unread badge). No channel read receipt. */
+  markRead(threadId: string): void {
+    this.store.markRead(threadId);
+  }
+
   // --- reads for UI / MCP --------------------------------------------------
 
   listThreads(): ThreadView[] {

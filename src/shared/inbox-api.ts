@@ -22,6 +22,8 @@ export interface WaNumberState {
 export interface InboxApi {
   listThreads(): Promise<ThreadView[]>;
   getHistory(threadId: string): Promise<Message[]>;
+  /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
+  markRead(threadId: string): Promise<void>;
   regenerateDraft(threadId: string): Promise<Draft>;
   approveAndSend(threadId: string, body: string): Promise<{ sent: boolean; channelMessageId?: string }>;
   /** Demo-only: inject a synthetic inbound message to show live receive→draft. */

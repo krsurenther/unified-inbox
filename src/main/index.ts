@@ -179,6 +179,10 @@ function notifyInbound(e: InboundEvent): void {
 function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
+  ipcMain.handle('inbox:markRead', (_e, threadId: string) => {
+    service.markRead(threadId);
+    updateBadge();
+  });
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
   ipcMain.handle('inbox:approveAndSend', async (_e, threadId: string, body: string) => {
     const r = await service.approveAndSend(threadId, { body, approvedBy: 'human:ui' });
