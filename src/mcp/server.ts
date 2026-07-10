@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { setDefaultResultOrder } from 'node:dns';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -24,7 +25,13 @@ setDefaultResultOrder('ipv4first');
  */
 const dbPath =
   process.env.UNIFIED_INBOX_DB ?? join(homedir(), 'Library', 'Application Support', 'unified-inbox', 'inbox.sqlite');
-const store = new InboxStore(dbPath);
+if (!existsSync(dbPath)) {
+  console.error(`[unified-inbox mcp] no database at ${dbPath} — launch the desktop app once first.`);
+  process.exit(1);
+}
+// Read-only: this process must never write the shared inbox. draft_reply returns
+// text only; approval/sending live in the desktop app (human-in-the-loop).
+const store = new InboxStore(dbPath, { readOnly: true });
 const config = AppConfigSchema.parse({ defaultProvider: 'ollama' });
 const router = new LlmRouter(config, {
   echo: new EchoProvider(),
