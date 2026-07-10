@@ -192,7 +192,15 @@ export class InboxStore {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(randomUUID(), p.threadId, p.direction, p.body, p.channelMessageId ?? null, p.authorName ?? null, p.meta ? JSON.stringify(p.meta) : null, createdAt);
-    return { inserted: Number(res.changes) > 0 };
+    const inserted = Number(res.changes) > 0;
+    // Backfill media onto an already-stored message (e.g. a historical WhatsApp image
+    // whose media we only downloaded on a later re-sync). Only when meta is currently null.
+    if (!inserted && p.meta && p.channelMessageId) {
+      this.db
+        .prepare(`UPDATE messages SET meta = ? WHERE thread_id = ? AND channel_message_id = ? AND meta IS NULL`)
+        .run(JSON.stringify(p.meta), p.threadId, p.channelMessageId);
+    }
+    return { inserted };
   }
 
   /** Set a thread's authoritative unread / last-activity from the channel. */
