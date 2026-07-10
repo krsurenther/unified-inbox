@@ -302,6 +302,7 @@ export class InboxStore {
       this.db.prepare(`DELETE FROM drafts WHERE thread_id = ?`).run(id);
       messages += Number(this.db.prepare(`DELETE FROM messages WHERE thread_id = ?`).run(id).changes);
       this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+      this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(`mute:${id}`); // no orphan mute flags
     }
     return messages;
   }
@@ -351,6 +352,15 @@ export class InboxStore {
       .run(key, value);
   }
 
+  /** Mute a thread ("not a customer"): suppresses AI drafting + notifications. Settings-backed. */
+  setThreadMuted(threadId: string, muted: boolean): void {
+    this.setSetting(`mute:${threadId}`, muted ? '1' : '0');
+  }
+
+  isThreadMuted(threadId: string): boolean {
+    return this.getSetting(`mute:${threadId}`) === '1';
+  }
+
   /** Clear a thread's unread (local read state; never sends a channel read receipt). */
   markRead(threadId: string): void {
     this.db.prepare(`UPDATE threads SET unread = 0 WHERE id = ?`).run(threadId);
@@ -386,6 +396,7 @@ export class InboxStore {
       customer: this.customerById(thread.customerId)!,
       lastMessagePreview: (last?.body as string) ?? undefined,
       lastMessageDirection: (last?.direction as MessageDirection) ?? undefined,
+      muted: this.isThreadMuted(thread.id),
       draft: this.getLatestDraft(thread.id),
     };
   }

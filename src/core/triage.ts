@@ -5,5 +5,5 @@ import type { ThreadView } from './types';
  * customer (we haven't answered). Pure so the renderer and tests share one rule.
  */
 export function needsReply(view: ThreadView): boolean {
-  return view.thread.status === 'open' && view.lastMessageDirection === 'inbound';
+  return !view.muted && view.thread.status === 'open' && view.lastMessageDirection === 'inbound';
 }

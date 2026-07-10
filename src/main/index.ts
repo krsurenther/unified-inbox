@@ -195,6 +195,9 @@ function registerIpc(): void {
   ipcMain.handle('inbox:setThreadStatus', (_e, threadId: string, status: 'open' | 'snoozed' | 'closed') =>
     service.setThreadStatus(threadId, status),
   );
+  ipcMain.handle('inbox:setThreadMuted', (_e, threadId: string, muted: boolean) =>
+    service.setThreadMuted(threadId, muted),
+  );
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
   ipcMain.handle('inbox:updateDraft', (_e, draftId: string, body: string) => service.updateDraft(draftId, body));
   ipcMain.handle('inbox:approveAndSend', (_e, threadId: string, body: string) => {

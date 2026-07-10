@@ -29,6 +29,8 @@ export interface InboxApi {
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
   setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): Promise<void>;
+  /** Mute/unmute a thread ("not a customer") — stops AI drafts + notifications for it. */
+  setThreadMuted(threadId: string, muted: boolean): Promise<void>;
   regenerateDraft(threadId: string): Promise<Draft>;
   /** Persist a human-edited draft body (marks it 'edited' so drafting won't overwrite it). */
   updateDraft(draftId: string, body: string): Promise<Draft>;

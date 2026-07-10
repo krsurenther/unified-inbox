@@ -253,6 +253,12 @@ export function App() {
     flash(status === 'closed' ? 'Marked done ✓' : 'Reopened');
   };
 
+  const toggleMuted = async (threadId: string, muted: boolean) => {
+    await inbox.setThreadMuted(threadId, muted);
+    await refreshThreads();
+    flash(muted ? '🔇 Muted — no AI drafts or alerts' : 'Unmuted');
+  };
+
   const disconnectWa = async (id: string, linked: boolean) => {
     const msg = linked
       ? "Unlink this WhatsApp number? This removes it from your phone's Linked Devices and deletes all its conversations from this inbox. Chats still on the phone re-import if you re-link."
@@ -323,7 +329,8 @@ export function App() {
               </div>
               <div className="thread-foot">
                 <span className={`chan chan-${t.channel.kind}`}>{t.channel.label}</span>
-                {t.draft && t.draft.status !== 'sent' && <span className="dot-draft">draft ready</span>}
+                {t.muted && <span className="muted-tag">🔇</span>}
+                {!t.muted && t.draft && t.draft.status !== 'sent' && <span className="dot-draft">draft ready</span>}
               </div>
             </button>
           ))}
@@ -342,6 +349,9 @@ export function App() {
                   </div>
                 </div>
                 <div className="dh-actions">
+                  <button className="btn ghost" onClick={() => toggleMuted(selected.thread.id, !selected.muted)}>
+                    {selected.muted ? '🔔 Unmute' : '🔇 Not a customer'}
+                  </button>
                   {selected.thread.status === 'closed' ? (
                     <button className="btn ghost" onClick={() => setStatus(selected.thread.id, 'open')}>↩ Reopen</button>
                   ) : (

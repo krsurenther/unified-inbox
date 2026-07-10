@@ -66,5 +66,6 @@ export interface ThreadView {
   customer: Customer;
   lastMessagePreview?: string;
   lastMessageDirection?: MessageDirection;
+  muted?: boolean;
   draft?: Draft;
 }

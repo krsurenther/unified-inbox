@@ -93,6 +93,31 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('muting a thread suppresses notifications (and drafting); the message is still stored; unmute restores', async () => {
+    const events: string[] = [];
+    const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
+    const store = new InboxStore(':memory:');
+    const router = new LlmRouter(config, { echo: new EchoProvider() });
+    const service = new InboxService({ store, router, config, onInbound: (e) => events.push(e.body) });
+    const fake = new FakeAdapter({ id: 'fake:demo', label: 'Demo' });
+    service.registerChannel(fake);
+    await service.start();
+
+    await fake.inject({ threadKey: 't1', from: { externalId: 'sup', name: 'Supplier' }, body: 'first' });
+    const tid = service.listThreads()[0]!.thread.id;
+    expect(events).toEqual(['first']);
+
+    service.setThreadMuted(tid, true);
+    expect(service.getThreadView(tid)!.muted).toBe(true);
+    await fake.inject({ threadKey: 't1', from: { externalId: 'sup', name: 'Supplier' }, body: 'muted ping' });
+    expect(events).toEqual(['first']); // no new notification while muted
+    expect(service.getHistory(tid).some((m) => m.body === 'muted ping')).toBe(true); // but still stored
+
+    service.setThreadMuted(tid, false);
+    await fake.inject({ threadKey: 't1', from: { externalId: 'sup', name: 'Supplier' }, body: 'back' });
+    expect(events).toContain('back');
+  });
+
   it('markRead clears a thread\'s unread (local only — no channel receipt)', async () => {
     const { service, store } = makeService();
     await service.start();

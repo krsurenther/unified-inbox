@@ -87,14 +87,16 @@ export class InboxService {
       createdAt: msg.timestamp,
     });
     if (!inserted) return; // duplicate delivery — nothing new to draft or notify
-    this.onInbound?.({
-      threadId: thread.id,
-      channelId: msg.channelId,
-      channelLabel: this.channels.get(msg.channelId)?.channel.label ?? msg.channelId,
-      customerName: msg.from.name ?? msg.from.externalId,
-      body: msg.body,
-      at: msg.timestamp ?? new Date().toISOString(),
-    });
+    if (!this.store.isThreadMuted(thread.id)) {
+      this.onInbound?.({
+        threadId: thread.id,
+        channelId: msg.channelId,
+        channelLabel: this.channels.get(msg.channelId)?.channel.label ?? msg.channelId,
+        customerName: msg.from.name ?? msg.from.externalId,
+        body: msg.body,
+        at: msg.timestamp ?? new Date().toISOString(),
+      });
+    }
     await this.maybeDraft(thread.id, { newInbound: true });
   }
 
@@ -106,6 +108,7 @@ export class InboxService {
    */
   private async maybeDraft(threadId: string, opts: { newInbound: boolean }): Promise<void> {
     if (!opts.newInbound) return;
+    if (this.store.isThreadMuted(threadId)) return; // muted threads ("not a customer") don't draft
     const view = this.store.getThreadView(threadId);
     if (view?.lastMessageDirection !== 'inbound') return; // already answered on the channel
     const draft = view.draft;
@@ -182,14 +185,16 @@ export class InboxService {
           messages++;
           if (m.direction === 'inbound') {
             newInbound = true;
-            this.onInbound?.({
-              threadId: thread.id,
-              channelId,
-              channelLabel: adapter.channel.label,
-              customerName: d.participant.name ?? d.participant.externalId,
-              body: m.body,
-              at: m.timestamp ?? new Date().toISOString(),
-            });
+            if (!this.store.isThreadMuted(thread.id)) {
+              this.onInbound?.({
+                threadId: thread.id,
+                channelId,
+                channelLabel: adapter.channel.label,
+                customerName: d.participant.name ?? d.participant.externalId,
+                body: m.body,
+                at: m.timestamp ?? new Date().toISOString(),
+              });
+            }
           }
         }
       }
@@ -269,6 +274,11 @@ export class InboxService {
   /** Set a thread's workflow status (open | snoozed | closed). */
   setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): void {
     this.store.setThreadStatus(threadId, status);
+  }
+
+  /** Mute/unmute a thread ("not a customer") — suppresses drafting + notifications. */
+  setThreadMuted(threadId: string, muted: boolean): void {
+    this.store.setThreadMuted(threadId, muted);
   }
 
   // --- reads for UI / MCP --------------------------------------------------
