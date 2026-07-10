@@ -277,6 +277,10 @@ export class InboxService {
     return this.store.listThreads();
   }
 
+  getThreadView(threadId: string): ThreadView | undefined {
+    return this.store.getThreadView(threadId);
+  }
+
   getHistory(threadId: string): Message[] {
     return this.store.getHistory(threadId);
   }

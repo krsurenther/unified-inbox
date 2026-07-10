@@ -17,6 +17,7 @@ import { createDuokeAdapters, type DuokeAdapter } from '../core/channels/duoke/D
 import { DuokeSendDriver } from '../core/channels/duoke/DuokeSendDriver';
 import { AppConfigSchema, type AppConfig } from '../core/config/Config';
 import { WhatsAppManager } from './WhatsAppManager';
+import { SendQueue, type SendJob } from './SendQueue';
 
 let service: InboxService;
 let store: InboxStore;
@@ -25,6 +26,7 @@ let fake: FakeAdapter;
 let simSeq = 0;
 let win: BrowserWindow | undefined;
 let waManager: WhatsAppManager | undefined;
+let sendQueue: SendQueue;
 let duokeClient: DuokeClient | undefined;
 let duokeSendDriver: DuokeSendDriver | undefined;
 const duokeChannelIds: string[] = [];
@@ -160,6 +162,13 @@ function updateBadge(): void {
   app.dock?.setBadge(n > 0 ? String(n) : '');
 }
 
+/** The queue's worker: performs one approved send (the only outbound path) + refreshes the badge. */
+async function runSend(job: SendJob): Promise<{ channelMessageId?: string }> {
+  const r = await service.approveAndSend(job.threadId, { body: job.body, approvedBy: job.approvedBy });
+  updateBadge();
+  return { channelMessageId: r.channelMessageId };
+}
+
 /** Notify the team of a fresh inbound (and keep the badge current). */
 function notifyInbound(e: InboundEvent): void {
   updateBadge();
@@ -188,10 +197,15 @@ function registerIpc(): void {
   );
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
   ipcMain.handle('inbox:updateDraft', (_e, draftId: string, body: string) => service.updateDraft(draftId, body));
-  ipcMain.handle('inbox:approveAndSend', async (_e, threadId: string, body: string) => {
-    const r = await service.approveAndSend(threadId, { body, approvedBy: 'human:ui' });
-    updateBadge(); // the outbound cleared this thread's unread
-    return r;
+  ipcMain.handle('inbox:approveAndSend', (_e, threadId: string, body: string) => {
+    const view = service.getThreadView(threadId);
+    if (!view) throw new Error(`thread not found: ${threadId}`);
+    const channelId = view.channel.id;
+    const etaMs = waManager?.etaFor(channelId, body) ?? 0;
+    // Enqueue and return immediately — the paced (~2.5-15s) send runs in the queue,
+    // serialized per number, and streams send:update events the renderer displays.
+    sendQueue.enqueue({ threadId, channelId, body, approvedBy: 'human:ui' });
+    return { queued: true as const, etaMs };
   });
   ipcMain.handle('inbox:simulateIncoming', async () => {
     const pick = SIM_POOL[simSeq++ % SIM_POOL.length]!;
@@ -250,6 +264,8 @@ app.whenReady().then(async () => {
     onChange: () => win?.webContents.send('wa:update', waManager?.list() ?? []),
   });
   waManager.autoStartLinked();
+  // Per-number send queue: serializes paced sends + streams state to the renderer.
+  sendQueue = new SendQueue(runSend, (e) => win?.webContents.send('send:update', e));
   // Connect Duoke in the background, then keep it fresh.
   void bootDuoke();
   syncTimer = setInterval(() => {

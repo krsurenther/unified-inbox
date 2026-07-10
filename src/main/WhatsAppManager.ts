@@ -73,6 +73,13 @@ export class WhatsAppManager {
     this.onChange();
   }
 
+  /** Human-pacing delay (ms) a send on this channel will incur — 0 for non-WhatsApp channels. */
+  etaFor(channelId: string, body: string): number {
+    if (!channelId.startsWith('whatsapp:')) return 0;
+    const policy = this.guard.policyFor(channelId.slice('whatsapp:'.length));
+    return policy ? policy.delayFor(body) : 0;
+  }
+
   private hasSession(id: string): boolean {
     return existsSync(join(this.dataPath, `session-${id}`));
   }

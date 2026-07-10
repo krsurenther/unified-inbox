@@ -10,6 +10,11 @@ const api: InboxApi = {
   regenerateDraft: (threadId) => ipcRenderer.invoke('inbox:regenerateDraft', threadId),
   updateDraft: (draftId, body) => ipcRenderer.invoke('inbox:updateDraft', draftId, body),
   approveAndSend: (threadId, body) => ipcRenderer.invoke('inbox:approveAndSend', threadId, body),
+  onSendUpdate: (cb) => {
+    const listener = (_e: unknown, evt: Parameters<typeof cb>[0]) => cb(evt);
+    ipcRenderer.on('send:update', listener);
+    return () => ipcRenderer.removeListener('send:update', listener);
+  },
   simulateIncoming: () => ipcRenderer.invoke('inbox:simulateIncoming'),
 
   listWhatsApp: () => ipcRenderer.invoke('wa:list'),

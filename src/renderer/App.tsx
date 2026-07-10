@@ -24,6 +24,7 @@ export function App() {
   const [waOpen, setWaOpen] = useState(false);
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
+  const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
   const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
 
   const refreshThreads = useCallback(async () => {
@@ -40,6 +41,8 @@ export function App() {
     () => threads.find((t) => t.thread.id === selectedId) ?? null,
     [threads, selectedId],
   );
+  const sending = selectedId ? sendStates[selectedId] : undefined;
+  const pacing = sending?.state === 'pacing';
 
   const counts = useMemo(() => {
     let needs = 0;
@@ -183,6 +186,27 @@ export function App() {
     setTimeout(() => setToast(null), error ? 4500 : 2500);
   };
 
+  // Send lifecycle (queued → pacing → sent | failed), streamed from the send queue.
+  useEffect(
+    () =>
+      inbox.onSendUpdate((e) => {
+        setSendStates((s) => {
+          const next = { ...s };
+          if (e.state === 'sent') delete next[e.threadId];
+          else if (e.state === 'failed') next[e.threadId] = { state: 'failed', error: e.error };
+          else next[e.threadId] = { state: 'pacing', etaMs: next[e.threadId]?.etaMs }; // queued/pacing
+          return next;
+        });
+        if (e.state === 'sent') {
+          void refreshThreads();
+          if (e.threadId === selectedId) void inbox.getHistory(selectedId).then(setHistory);
+          refreshGuard();
+          flash('Reply sent ✓');
+        }
+      }),
+    [selectedId, refreshThreads, refreshGuard],
+  );
+
   const onRegenerate = async () => {
     if (!selectedId) return;
     setDrafting(true);
@@ -200,19 +224,13 @@ export function App() {
   const onSend = async () => {
     if (!selectedId || !draftBody.trim()) return;
     if (saveTimer.current) clearTimeout(saveTimer.current); // don't let a pending edit-save race the send
-    setBusy(true);
+    const tid = selectedId;
+    setSendStates((s) => ({ ...s, [tid]: { state: 'pacing' } })); // optimistic; enrich with etaMs below
     try {
-      const res = await inbox.approveAndSend(selectedId, draftBody.trim());
-      if (res.sent) {
-        setHistory(await inbox.getHistory(selectedId));
-        await refreshThreads();
-        refreshGuard(); // a WhatsApp send moves the daily counter / risk band
-        flash('Reply sent ✓');
-      }
+      const { etaMs } = await inbox.approveAndSend(tid, draftBody.trim());
+      setSendStates((s) => ({ ...s, [tid]: { state: 'pacing', etaMs } }));
     } catch (e) {
-      flash(`Send blocked: ${(e as Error).message?.split(': ').pop() ?? 'error'}`, true);
-    } finally {
-      setBusy(false);
+      setSendStates((s) => ({ ...s, [tid]: { state: 'failed', error: (e as Error).message } }));
     }
   };
 
@@ -352,6 +370,17 @@ export function App() {
                   </span>
                   <span className="safety">🔒 Auto-send OFF · human approval required</span>
                 </div>
+                {sending?.state === 'failed' && (
+                  <div className="send-error">
+                    <span>⚠ {sending.error}</span>
+                    <button
+                      className="send-error-x"
+                      onClick={() => setSendStates((s) => { const n = { ...s }; if (selectedId) delete n[selectedId]; return n; })}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={draftBody}
                   onChange={(e) => onDraftChange(e.target.value)}
@@ -359,11 +388,13 @@ export function App() {
                   rows={4}
                 />
                 <div className="composer-actions">
-                  <button className="btn ghost" onClick={onRegenerate} disabled={busy || drafting}>
+                  <button className="btn ghost" onClick={onRegenerate} disabled={pacing || drafting}>
                     {drafting ? '⋯ Generating' : '↻ Regenerate'}
                   </button>
-                  <button className="btn primary" onClick={onSend} disabled={busy || drafting || !draftBody.trim()}>
-                    ✓ Approve &amp; Send
+                  <button className="btn primary" onClick={onSend} disabled={pacing || drafting || !draftBody.trim()}>
+                    {pacing
+                      ? `⋯ Sending…${sending?.etaMs ? ` ~${Math.ceil(sending.etaMs / 1000)}s (pacing)` : ''}`
+                      : '✓ Approve & Send'}
                   </button>
                 </div>
               </div>

@@ -1,5 +1,8 @@
 import type { Draft, Message, ThreadView } from '../core/types';
 import type { WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
+import type { SendEvent } from '../main/SendQueue';
+
+export type { SendEvent } from '../main/SendQueue';
 
 export type { WaGuardStatus, WaNumberSendStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 
@@ -29,7 +32,10 @@ export interface InboxApi {
   regenerateDraft(threadId: string): Promise<Draft>;
   /** Persist a human-edited draft body (marks it 'edited' so drafting won't overwrite it). */
   updateDraft(draftId: string, body: string): Promise<Draft>;
-  approveAndSend(threadId: string, body: string): Promise<{ sent: boolean; channelMessageId?: string }>;
+  /** Enqueue an approved reply; returns immediately with the pacing ETA. Watch onSendUpdate for the result. */
+  approveAndSend(threadId: string, body: string): Promise<{ queued: true; etaMs: number }>;
+  /** Subscribe to send lifecycle events (queued → pacing → sent | failed). Returns unsubscribe. */
+  onSendUpdate(cb: (e: SendEvent) => void): () => void;
   /** Demo-only: inject a synthetic inbound message to show live receive→draft. */
   simulateIncoming(): Promise<void>;
 
