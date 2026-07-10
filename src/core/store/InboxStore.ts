@@ -135,8 +135,9 @@ export class InboxStore {
 
     const inserted = Number(res.changes) > 0;
     if (inserted) {
+      // A new customer message reopens a done thread and bumps unread.
       this.db
-        .prepare(`UPDATE threads SET last_message_at = ?, unread = unread + 1 WHERE id = ?`)
+        .prepare(`UPDATE threads SET last_message_at = ?, unread = unread + 1, status = 'open' WHERE id = ?`)
         .run(createdAt, p.threadId);
     }
     return { inserted };
@@ -345,6 +346,14 @@ export class InboxStore {
   /** Clear a thread's unread (local read state; never sends a channel read receipt). */
   markRead(threadId: string): void {
     this.db.prepare(`UPDATE threads SET unread = 0 WHERE id = ?`).run(threadId);
+  }
+
+  /** Set a thread's workflow status (open | snoozed | closed). */
+  setThreadStatus(threadId: string, status: Thread['status']): void {
+    if (status !== 'open' && status !== 'snoozed' && status !== 'closed') {
+      throw new Error(`invalid thread status: ${status}`);
+    }
+    this.db.prepare(`UPDATE threads SET status = ? WHERE id = ?`).run(status, threadId);
   }
 
   /** Total unread across all threads — the dock-badge source. */

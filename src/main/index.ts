@@ -183,6 +183,9 @@ function registerIpc(): void {
     service.markRead(threadId);
     updateBadge();
   });
+  ipcMain.handle('inbox:setThreadStatus', (_e, threadId: string, status: 'open' | 'snoozed' | 'closed') =>
+    service.setThreadStatus(threadId, status),
+  );
   ipcMain.handle('inbox:regenerateDraft', (_e, threadId: string) => service.generateDraft(threadId));
   ipcMain.handle('inbox:approveAndSend', async (_e, threadId: string, body: string) => {
     const r = await service.approveAndSend(threadId, { body, approvedBy: 'human:ui' });

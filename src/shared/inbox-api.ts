@@ -24,6 +24,8 @@ export interface InboxApi {
   getHistory(threadId: string): Promise<Message[]>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
+  /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */
+  setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): Promise<void>;
   regenerateDraft(threadId: string): Promise<Draft>;
   approveAndSend(threadId: string, body: string): Promise<{ sent: boolean; channelMessageId?: string }>;
   /** Demo-only: inject a synthetic inbound message to show live receive→draft. */

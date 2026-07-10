@@ -254,6 +254,11 @@ export class InboxService {
     this.store.markRead(threadId);
   }
 
+  /** Set a thread's workflow status (open | snoozed | closed). */
+  setThreadStatus(threadId: string, status: 'open' | 'snoozed' | 'closed'): void {
+    this.store.setThreadStatus(threadId, status);
+  }
+
   // --- reads for UI / MCP --------------------------------------------------
 
   listThreads(): ThreadView[] {
