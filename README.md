@@ -15,6 +15,15 @@ This is a deliberate low-cost workaround until official channel APIs are afforda
 | 4 | AI reply layer (Ollama, per-channel, swappable) + MCP server | ✅ done |
 | 5 | Hardening: WhatsApp anti-ban (pacing/caps/kill-switch) ✅, persistence ⬜, swap-to-official docs ⬜ | 🚧 anti-ban done |
 
+### Remediation ([review](docs/REVIEW-2026-07-10.md) → [plans](docs/plans/))
+
+| Round | Scope | State |
+|---|---|---|
+| 1 | Data safety & awareness: busy_timeout + read-only MCP, notifications + badge, draft-race fix, Ollama timeout, clean shutdown, persistent kill switch, status/empty filters, disconnect-purge | ✅ done |
+| 2 | Triage loop: read/Done/needs-reply, durable edits, send queue + pacing UI, health banners, WA reconnect | ⬜ |
+| 3 | Config wiring, Duoke send hardening, burst/hours caps, draft quality | ⬜ |
+| 4 | Packaging (.app), push-driven UI, migrations, keyboard, test coverage | ⬜ |
+
 ## Architecture (one-liner)
 
 Electron (one long-lived Node main process) hosts the local SQLite store, the channel adapters, the LLM router, and an MCP server; a React renderer is the inbox UI over a thin typed IPC boundary. See [docs/RECON.md](docs/RECON.md) §0.
