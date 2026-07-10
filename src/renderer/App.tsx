@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
-import type { WaGuardStatus, WaNumberState } from '../shared/inbox-api';
+import type { HealthStatus, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
 import { inbox } from './api';
@@ -25,6 +25,7 @@ export function App() {
   const [waNumbers, setWaNumbers] = useState<WaNumberState[]>([]);
   const [waGuard, setWaGuard] = useState<WaGuardStatus | null>(null);
   const [sendStates, setSendStates] = useState<Record<string, { state: 'pacing' | 'failed'; etaMs?: number; error?: string }>>({});
+  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
 
   const refreshThreads = useCallback(async () => {
@@ -43,6 +44,8 @@ export function App() {
   );
   const sending = selectedId ? sendStates[selectedId] : undefined;
   const pacing = sending?.state === 'pacing';
+  const duokeDown = !!health && !health.channels.some((c) => c.kind === 'duoke' && c.health.connected);
+  const draftDown = !!health && !health.draft.ok;
 
   const counts = useMemo(() => {
     let needs = 0;
@@ -158,6 +161,14 @@ export function App() {
 
   // Open the thread when a macOS notification is clicked.
   useEffect(() => inbox.onSelectThread((id) => setSelectedId(id)), []);
+
+  // Channel + drafting health — polled for the status banners.
+  useEffect(() => {
+    const load = () => inbox.health().then(setHealth).catch(() => {});
+    load();
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, []);
 
   // WhatsApp anti-ban guard — per-number send counts / risk + kill switch. Polled
   // so the risk bands and daily counters stay live as replies go out.
@@ -311,6 +322,9 @@ export function App() {
               </button>
             ))}
           </div>
+          {(filter === 'marketplace' || filter === 'all') && duokeDown && (
+            <div className="banner warn">⚠ Marketplaces not syncing — open Duoke and log in.</div>
+          )}
           {filteredThreads.length === 0 && <div className="empty">No conversations here.</div>}
           {filteredThreads.map((t) => (
             <button
@@ -380,6 +394,9 @@ export function App() {
                   </span>
                   <span className="safety">🔒 Auto-send OFF · human approval required</span>
                 </div>
+                {draftDown && !drafting && !draftBody.trim() && (
+                  <div className="banner warn">⚠ Drafting unavailable — {health?.draft.error}. Is Ollama running?</div>
+                )}
                 {sending?.state === 'failed' && (
                   <div className="send-error">
                     <span>⚠ {sending.error}</span>

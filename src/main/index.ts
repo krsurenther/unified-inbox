@@ -188,6 +188,7 @@ function notifyInbound(e: InboundEvent): void {
 function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
+  ipcMain.handle('inbox:health', async () => ({ channels: await service.channelsHealth(), draft: service.draftHealth() }));
   ipcMain.handle('inbox:markRead', (_e, threadId: string) => {
     service.markRead(threadId);
     updateBadge();

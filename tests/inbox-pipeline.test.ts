@@ -93,6 +93,29 @@ describe('inbox pipeline — fake channel + echo provider', () => {
     expect(store.getHistory(threadId).filter((m) => m.direction === 'inbound')).toHaveLength(1);
   });
 
+  it('channelsHealth reports a row per registered channel; draftHealth tracks last outcome', async () => {
+    let fail = true;
+    const config = AppConfigSchema.parse({ defaultProvider: 'flaky' });
+    const store = new InboxStore(':memory:');
+    const router = new LlmRouter(config, {
+      flaky: { id: 'flaky', async draftReply() { if (fail) throw new Error('Ollama unreachable'); return { text: 'ok', providerId: 'flaky', model: 'm' }; } },
+    });
+    const service = new InboxService({ store, router, config });
+    const fake = new FakeAdapter({ id: 'fake:demo', label: 'Demo' });
+    service.registerChannel(fake);
+    await service.start();
+
+    expect((await service.channelsHealth()).map((r) => r.channelId)).toEqual(['fake:demo']);
+
+    await fake.inject({ threadKey: 't1', from: { externalId: 'c', name: 'A' }, body: 'hi' }); // drafting fails
+    expect(service.draftHealth().ok).toBe(false);
+    expect(service.draftHealth().error).toMatch(/unreachable/i);
+
+    fail = false;
+    await service.generateDraft(service.listThreads()[0]!.thread.id); // a success clears it
+    expect(service.draftHealth().ok).toBe(true);
+  });
+
   it('muting a thread suppresses notifications (and drafting); the message is still stored; unmute restores', async () => {
     const events: string[] = [];
     const config = AppConfigSchema.parse({ defaultProvider: 'echo' });

@@ -5,6 +5,7 @@ import type { InboxApi, WaNumberState } from '../shared/inbox-api';
 const api: InboxApi = {
   listThreads: () => ipcRenderer.invoke('inbox:listThreads'),
   getHistory: (threadId) => ipcRenderer.invoke('inbox:getHistory', threadId),
+  health: () => ipcRenderer.invoke('inbox:health'),
   markRead: (threadId) => ipcRenderer.invoke('inbox:markRead', threadId),
   setThreadStatus: (threadId, status) => ipcRenderer.invoke('inbox:setThreadStatus', threadId, status),
   setThreadMuted: (threadId, muted) => ipcRenderer.invoke('inbox:setThreadMuted', threadId, muted),

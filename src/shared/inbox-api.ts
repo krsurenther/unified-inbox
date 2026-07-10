@@ -1,8 +1,15 @@
 import type { Draft, Message, ThreadView } from '../core/types';
 import type { WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 import type { SendEvent } from '../main/SendQueue';
+import type { ChannelHealthRow } from '../core/InboxService';
 
 export type { SendEvent } from '../main/SendQueue';
+export type { ChannelHealthRow } from '../core/InboxService';
+
+export interface HealthStatus {
+  channels: ChannelHealthRow[];
+  draft: { ok: boolean; error?: string };
+}
 
 export type { WaGuardStatus, WaNumberSendStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 
@@ -25,6 +32,8 @@ export interface WaNumberState {
 export interface InboxApi {
   listThreads(): Promise<ThreadView[]>;
   getHistory(threadId: string): Promise<Message[]>;
+  /** Live channel + drafting health, for status banners. */
+  health(): Promise<HealthStatus>;
   /** Clear a thread's unread locally (on open). No channel read receipt is sent. */
   markRead(threadId: string): Promise<void>;
   /** Set a thread's workflow status (Done = 'closed', reopen = 'open'). */

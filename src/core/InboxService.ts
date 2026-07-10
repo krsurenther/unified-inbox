@@ -1,9 +1,17 @@
 import type { AppConfig } from './config/Config';
 import { channelConfig } from './config/Config';
-import type { ChannelAdapter, InboundMessage, OutboundMessage } from './channels/ChannelAdapter';
+import type { ChannelAdapter, ChannelHealth, InboundMessage, OutboundMessage } from './channels/ChannelAdapter';
 import type { LlmRouter } from './llm/LlmRouter';
 import type { InboxStore } from './store/InboxStore';
 import type { Draft, Message, ThreadView } from './types';
+
+/** One channel's live health, for the renderer's status banners. */
+export interface ChannelHealthRow {
+  channelId: string;
+  label: string;
+  kind: string;
+  health: ChannelHealth;
+}
 
 /** Emitted once per newly-inserted inbound message (push or sync path) — drives notifications. */
 export interface InboundEvent {
@@ -36,6 +44,7 @@ export class InboxService {
   private readonly router: LlmRouter;
   private readonly config: AppConfig;
   private readonly onInbound?: (e: InboundEvent) => void;
+  private lastDraftError?: string;
   private readonly channels = new Map<string, ChannelAdapter>();
 
   constructor(deps: InboxServiceDeps) {
@@ -136,24 +145,44 @@ export class InboxService {
       at: m.createdAt,
     }));
 
-    const result = await this.router.draft(view.channel.id, {
-      thread: {
-        id: threadId,
-        channelId: view.channel.id,
-        channelKind: view.channel.kind,
-        customerName: view.customer.name,
-      },
-      history,
-      systemPrompt: this.config.systemPrompt,
-    });
+    try {
+      const result = await this.router.draft(view.channel.id, {
+        thread: {
+          id: threadId,
+          channelId: view.channel.id,
+          channelKind: view.channel.kind,
+          customerName: view.customer.name,
+        },
+        history,
+        systemPrompt: this.config.systemPrompt,
+      });
+      const draft = this.store.saveDraft({
+        threadId,
+        body: result.text,
+        status: 'suggested',
+        providerId: result.providerId,
+        model: result.model,
+      });
+      this.lastDraftError = undefined; // drafting is healthy
+      return draft;
+    } catch (e) {
+      this.lastDraftError = (e as Error).message; // surfaced via draftHealth()
+      throw e;
+    }
+  }
 
-    return this.store.saveDraft({
-      threadId,
-      body: result.text,
-      status: 'suggested',
-      providerId: result.providerId,
-      model: result.model,
-    });
+  /** Whether the last drafting attempt succeeded (for a "drafting unavailable" banner). */
+  draftHealth(): { ok: boolean; error?: string } {
+    return { ok: !this.lastDraftError, error: this.lastDraftError };
+  }
+
+  /** Live health of every registered channel (connection + ban risk) — for status banners. */
+  async channelsHealth(): Promise<ChannelHealthRow[]> {
+    const rows: ChannelHealthRow[] = [];
+    for (const a of this.channels.values()) {
+      rows.push({ channelId: a.channel.id, label: a.channel.label, kind: a.channel.kind, health: await a.health() });
+    }
+    return rows;
   }
 
   /**
