@@ -87,6 +87,10 @@ async function bootCore(): Promise<void> {
   if (service.listThreads().length === 0) {
     for (const m of DEMO_INBOUND) await fake.inject(m);
   }
+
+  // Sweep junk that was stored before the live-path status/newsletter filter existed.
+  const swept = store.deleteThreadsByKey('status@broadcast');
+  if (swept.threads) console.log(`[inbox] swept ${swept.threads} status thread(s), ${swept.messages} messages`);
 }
 
 /**

@@ -10,7 +10,7 @@ import type {
 import type { ChannelRef } from '../../types';
 import type { WaClient, WaMessage } from './wa-types';
 import type { SendPolicy } from './SendPolicy';
-import { isSystemWaMessage, normalizeWaMessage, stripWaId, waChatToDescriptor } from './normalize';
+import { isInboxWaChat, isSystemWaMessage, normalizeWaMessage, stripWaId, waChatToDescriptor } from './normalize';
 
 export interface WhatsAppNumber {
   id: string; // 'num-1'
@@ -112,7 +112,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   }
 
   private async handleIncoming(msg: WaMessage): Promise<void> {
-    if (/@g\.us$/.test(msg.from)) return; // skip group chats — customer inbox is 1:1
+    if (!isInboxWaChat(msg.from)) return; // groups / status / broadcasts / newsletters aren't inbox chats
     if (msg.fromMe) return; // only inbound
     if (isSystemWaMessage(msg.type)) return; // skip encryption/notification noise
     const n = normalizeWaMessage(msg);
@@ -136,7 +136,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   async listThreads(): Promise<ThreadDescriptor[]> {
     const chats = await this.client.getChats();
     return chats
-      .filter((c) => !c.isGroup && !c.id._serialized.endsWith('@broadcast'))
+      .filter((c) => !c.isGroup && isInboxWaChat(c.id._serialized))
       .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
       .slice(0, this.threadLimit)
       .map(waChatToDescriptor);

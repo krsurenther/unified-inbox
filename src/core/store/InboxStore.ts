@@ -284,6 +284,27 @@ export class InboxStore {
     }));
   }
 
+  // --- deletion ------------------------------------------------------------
+
+  /** Delete drafts + messages + the thread rows themselves (FK-safe order). Returns messages deleted. */
+  private deleteThreadRows(threadIds: string[]): number {
+    let messages = 0;
+    for (const id of threadIds) {
+      this.db.prepare(`DELETE FROM drafts WHERE thread_id = ?`).run(id);
+      messages += Number(this.db.prepare(`DELETE FROM messages WHERE thread_id = ?`).run(id).changes);
+      this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+    }
+    return messages;
+  }
+
+  /** Remove every thread with this thread_key (any channel) + its messages/drafts. */
+  deleteThreadsByKey(threadKey: string): { threads: number; messages: number } {
+    const ids = (this.db.prepare(`SELECT id FROM threads WHERE thread_key = ?`).all(threadKey) as { id: string }[]).map(
+      (r) => r.id,
+    );
+    return { threads: ids.length, messages: this.deleteThreadRows(ids) };
+  }
+
   // --- views ---------------------------------------------------------------
 
   listThreads(): ThreadView[] {

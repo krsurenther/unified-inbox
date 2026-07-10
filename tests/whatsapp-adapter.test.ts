@@ -195,6 +195,20 @@ describe('WhatsAppAdapter', () => {
     expect(errs.some((e) => /ingest failed/i.test(e))).toBe(true); // the first was caught + logged
   });
 
+  it('does not ingest status@broadcast or newsletter messages', async () => {
+    const { client } = makeMock();
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
+    const got: Array<Record<string, unknown>> = [];
+    a.onMessage((m) => { got.push(m as unknown as Record<string, unknown>); });
+    await a.start();
+    client.emit('message', waMsg({ from: 'status@broadcast', id: { _serialized: 's1' }, body: 'story' }));
+    client.emit('message', waMsg({ from: 'x@newsletter', id: { _serialized: 'n1' }, body: 'promo' }));
+    client.emit('message', waMsg({ from: '60123456789@c.us', id: { _serialized: 'real' }, body: 'hi' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(got).toHaveLength(1);
+    expect(got[0]!.channelMessageId).toBe('real');
+  });
+
   it('exposes the QR string for linking', async () => {
     const { client } = makeMock();
     let qrSeen = '';

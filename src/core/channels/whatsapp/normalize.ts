@@ -24,6 +24,12 @@ export function stripWaId(serialized: string): string {
   return serialized.replace(/@(c\.us|s\.whatsapp\.net|g\.us|lid|broadcast)$/, '');
 }
 
+const NON_INBOX_CHAT = /(@g\.us|@broadcast|@newsletter)$/;
+/** 1:1 customer chats only — excludes groups, status/broadcasts, and channels/newsletters. */
+export function isInboxWaChat(chatId: string): boolean {
+  return !NON_INBOX_CHAT.test(chatId);
+}
+
 // Message types with no conversational content — filtered out of the inbox so
 // they don't show as blank bubbles (WhatsApp injects these into every chat).
 const SYSTEM_TYPES = new Set([

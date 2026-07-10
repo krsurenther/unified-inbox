@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeWaMessage, waChatToDescriptor } from '../src/core/channels/whatsapp/normalize';
+import { isInboxWaChat, normalizeWaMessage, waChatToDescriptor } from '../src/core/channels/whatsapp/normalize';
+
+describe('isInboxWaChat', () => {
+  it('accepts 1:1 chats, rejects groups, broadcasts (incl. status) and newsletters', () => {
+    expect(isInboxWaChat('60123456789@c.us')).toBe(true);
+    expect(isInboxWaChat('96971972935865@lid')).toBe(true);
+    expect(isInboxWaChat('123@g.us')).toBe(false);
+    expect(isInboxWaChat('status@broadcast')).toBe(false);
+    expect(isInboxWaChat('99@broadcast')).toBe(false);
+    expect(isInboxWaChat('abc@newsletter')).toBe(false);
+  });
+});
 
 describe('normalizeWaMessage', () => {
   const base = { id: { _serialized: 'm1' }, from: '60123456789@c.us', to: 'me@c.us', timestamp: 1700000000, type: 'chat', hasMedia: false };
