@@ -132,7 +132,8 @@ export class WhatsAppManager {
   /**
    * Unlink a number: log it out (removes the device from the phone + clears the
    * saved session) if it was linked, otherwise just tear down the pending connect.
-   * Historical threads are kept in the inbox. Resets to idle so it can re-link.
+   * Unlinking a LINKED number also purges its stored conversations (owner request
+   * 2026-07-10); the send_audit ledger is kept. Resets to idle so it can re-link.
    */
   async disconnect(id: string): Promise<void> {
     const e = this.entries.get(id);
@@ -155,6 +156,16 @@ export class WhatsAppManager {
       } catch {
         /* already down */
       }
+    }
+
+    if (wasReady) {
+      try {
+        const purged = this.service.purgeChannel(adapter.channel.id);
+        console.log(`[wa] ${id} unlinked — purged ${purged.threads} threads, ${purged.messages} messages`);
+      } catch (err) {
+        console.error(`[wa] purge ${id}:`, (err as Error).message);
+      }
+      this.onChange();
     }
   }
 }

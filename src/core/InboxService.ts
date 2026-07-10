@@ -244,6 +244,11 @@ export class InboxService {
     return this.store.countSendsSince(channelId, sinceIso);
   }
 
+  /** Remove a channel's stored conversations (threads/messages/drafts/customers). Audit is kept. */
+  purgeChannel(channelId: string): { threads: number; messages: number } {
+    return this.store.purgeChannelData(channelId);
+  }
+
   // --- reads for UI / MCP --------------------------------------------------
 
   listThreads(): ThreadView[] {

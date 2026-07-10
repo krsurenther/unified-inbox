@@ -20,4 +20,24 @@ describe('InboxStore thread deletion + channel purge', () => {
     expect(s.getLatestDraft(t1.id)).toBeUndefined();
     expect(s.getHistory(t2.id)).toHaveLength(1); // the real thread is untouched
   });
+
+  it('purgeChannelData removes threads/messages/drafts/customers for ONE channel, keeps audit + others', () => {
+    const s = new InboxStore(':memory:');
+    for (const ch of ['whatsapp:num-1', 'whatsapp:num-2']) {
+      s.upsertChannel({ id: ch, kind: 'whatsapp', label: ch });
+      const c = s.upsertCustomer(ch, `cust-${ch}`, 'C');
+      const t = s.findOrCreateThread(ch, c.id, `${ch}-t1`);
+      s.recordInbound({ threadId: t.id, body: 'hi', channelMessageId: `${ch}-m1` });
+      s.saveDraft({ threadId: t.id, body: 'draft' });
+      s.recordSendAudit({ threadId: t.id, channelId: ch, body: 'sent reply', sentAt: '2026-07-10T00:00:00.000Z' });
+    }
+    const before = s.countSendsSince('whatsapp:num-1', '1970-01-01T00:00:00.000Z');
+    expect(before).toBe(1);
+
+    const r = s.purgeChannelData('whatsapp:num-1');
+    expect(r.threads).toBe(1);
+    expect(s.listThreads().map((t) => t.channel.id)).toEqual(['whatsapp:num-2']); // only num-2 remains
+    // the anti-ban ledger is untouched — disconnect→reconnect cannot reset the daily cap
+    expect(s.countSendsSince('whatsapp:num-1', '1970-01-01T00:00:00.000Z')).toBe(before);
+  });
 });

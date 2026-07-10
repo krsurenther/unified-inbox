@@ -179,7 +179,7 @@ export function App() {
 
   const disconnectWa = async (id: string, linked: boolean) => {
     const msg = linked
-      ? "Unlink this WhatsApp number? It's removed from your phone's Linked Devices. Chat history stays in the inbox — re-link anytime by scanning again."
+      ? "Unlink this WhatsApp number? This removes it from your phone's Linked Devices and deletes all its conversations from this inbox. Chats still on the phone re-import if you re-link."
       : 'Stop connecting this number?';
     if (!window.confirm(msg)) return;
     await inbox.disconnectWhatsApp(id);

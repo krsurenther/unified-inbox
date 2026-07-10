@@ -297,6 +297,21 @@ export class InboxStore {
     return messages;
   }
 
+  /**
+   * Owner-requested (2026-07-10): unlinking a channel deletes its inbox data —
+   * threads, messages, drafts, and customers for the channel. Deliberately KEEPS
+   * the channels row and every send_audit row: the audit is the anti-ban ledger,
+   * and purging it would let disconnect→reconnect reset the daily cap.
+   */
+  purgeChannelData(channelId: string): { threads: number; messages: number } {
+    const ids = (this.db.prepare(`SELECT id FROM threads WHERE channel_id = ?`).all(channelId) as { id: string }[]).map(
+      (r) => r.id,
+    );
+    const messages = this.deleteThreadRows(ids);
+    this.db.prepare(`DELETE FROM customers WHERE channel_id = ?`).run(channelId);
+    return { threads: ids.length, messages };
+  }
+
   /** Remove every thread with this thread_key (any channel) + its messages/drafts. */
   deleteThreadsByKey(threadKey: string): { threads: number; messages: number } {
     const ids = (this.db.prepare(`SELECT id FROM threads WHERE thread_key = ?`).all(threadKey) as { id: string }[]).map(
