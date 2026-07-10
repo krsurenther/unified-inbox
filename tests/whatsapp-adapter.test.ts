@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { WhatsAppAdapter } from '../src/core/channels/whatsapp/WhatsAppAdapter';
 import { SendPolicy } from '../src/core/channels/whatsapp/SendPolicy';
 import type { WaChat, WaClient, WaMessage } from '../src/core/channels/whatsapp/wa-types';
@@ -173,6 +173,26 @@ describe('WhatsAppAdapter', () => {
     await a.start();
     client.emit('ready');
     expect((await a.health()).banRisk).toBe('high');
+  });
+
+  it('a throwing ingest handler is caught+logged (not an unhandled rejection) and later messages survive', async () => {
+    const { client } = makeMock();
+    const a = new WhatsAppAdapter({ client, number: { id: 'num-1', label: 'WA' } });
+    const errs: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errs.push(args.join(' ')); });
+    const got: string[] = [];
+    let first = true;
+    a.onMessage((m) => {
+      if (first) { first = false; throw new Error('db locked'); }
+      got.push(m.channelMessageId!);
+    });
+    await a.start();
+    client.emit('message', waMsg({ id: { _serialized: 'boom' }, body: 'x' }));
+    client.emit('message', waMsg({ id: { _serialized: 'ok-2' }, body: 'y' }));
+    await new Promise((r) => setTimeout(r, 0));
+    spy.mockRestore();
+    expect(got).toEqual(['ok-2']); // the second message still processed
+    expect(errs.some((e) => /ingest failed/i.test(e))).toBe(true); // the first was caught + logged
   });
 
   it('exposes the QR string for linking', async () => {

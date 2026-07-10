@@ -116,15 +116,21 @@ export class WhatsAppAdapter implements ChannelAdapter {
     if (msg.fromMe) return; // only inbound
     if (isSystemWaMessage(msg.type)) return; // skip encryption/notification noise
     const n = normalizeWaMessage(msg);
-    await this.handler?.({
-      channelId: this.channel.id,
-      from: { externalId: stripWaId(msg.from), phone: stripWaId(msg.from) },
-      threadKey: msg.from,
-      body: n.body,
-      channelMessageId: n.channelMessageId,
-      timestamp: n.timestamp,
-      raw: msg,
-    });
+    try {
+      await this.handler?.({
+        channelId: this.channel.id,
+        from: { externalId: stripWaId(msg.from), phone: stripWaId(msg.from) },
+        threadKey: msg.from,
+        body: n.body,
+        channelMessageId: n.channelMessageId,
+        timestamp: n.timestamp,
+        raw: msg,
+      });
+    } catch (e) {
+      // Never let a store/pipeline error become an unhandled rejection that
+      // silently drops the customer's message — log loud; backfill re-syncs it.
+      console.error(`[wa:${this.number.id}] ingest failed for ${n.channelMessageId}:`, (e as Error).message);
+    }
   }
 
   async listThreads(): Promise<ThreadDescriptor[]> {
