@@ -50,6 +50,42 @@ describe('DuokeSendDriver.send auto-open', () => {
   });
 });
 
+/** Throws a CDP "detached Frame" error on the first N conversationId reads, then behaves normally. */
+class FlakyDuoke extends FakeDuoke {
+  failsLeft: number;
+  reconnects = 0;
+  constructor(active: string, canOpen: boolean, failsLeft: number) {
+    super(active, canOpen);
+    this.failsLeft = failsLeft;
+  }
+  override async reconnect(): Promise<void> {
+    this.reconnects += 1;
+  }
+  protected override async evaluate<T>(expression: string): Promise<T> {
+    if (expression.includes('state.Chat.conversationId') && this.failsLeft > 0) {
+      this.failsLeft -= 1;
+      throw new Error("Attempted to use detached Frame 'BB2723C4F16B2C630100E51D9EDFED59'.");
+    }
+    return super.evaluate<T>(expression);
+  }
+}
+
+describe('DuokeSendDriver.send resilience (detached frame)', () => {
+  it('reconnects and retries the whole send once when Duoke navigates mid-send', async () => {
+    const d = new FlakyDuoke('c-1', true, 1); // first read throws detached-frame, then recovers
+    const res = await d.send({ conversationId: 'c-1', text: 'hi' });
+    expect(res).toEqual({ sent: true });
+    expect(d.reconnects).toBe(1);
+    expect(d.log).toEqual(['compose', 'enter']); // text re-composed on the fresh frame, then sent
+  });
+
+  it('surfaces the error (retrying exactly once) if the frame stays detached', async () => {
+    const d = new FlakyDuoke('c-1', true, 5); // keeps throwing
+    await expect(d.send({ conversationId: 'c-1', text: 'hi' })).rejects.toThrow(/detached frame/i);
+    expect(d.reconnects).toBe(1);
+  });
+});
+
 describe('parseOpenConversationId', () => {
   it('extracts conversationId from a Duoke message/list request URL', () => {
     const url = 'https://app.duoke.com/api/v1/im/message/list?pageNo=1&pageSize=30&shopId=s1&conversationId=7635567393180467463&platform=tiktok&language=en';

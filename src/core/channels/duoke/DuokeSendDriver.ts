@@ -23,6 +23,16 @@ export interface DuokeSendDriverOptions {
   host?: string;
 }
 
+/**
+ * CDP errors that mean "the page/frame we were driving is gone" — Duoke reloaded,
+ * navigated, or was reopened, detaching the frame our cached WebSocket pointed at.
+ * These are recoverable by reconnecting to a fresh target and redoing the action.
+ */
+export function isStaleFrameError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /detached frame|execution context was destroyed|cannot find context|target closed|inspected target|no target with given id|session with given id/i.test(m);
+}
+
 const COMPOSE_SELECTOR =
   `[...document.querySelectorAll('textarea.el-textarea__inner')].find(t=>/reply/i.test(t.placeholder)&&(t.offsetWidth||t.offsetHeight))`;
 
@@ -56,13 +66,23 @@ export class DuokeSendDriver {
       ws.addEventListener('open', () => resolve());
       ws.addEventListener('error', () => reject(new Error('Duoke CDP connection failed.')));
       ws.addEventListener('message', (ev: MessageEvent) => this.onMessage(String(ev.data)));
+      ws.addEventListener('close', () => { if (this.ws === ws) this.ws = undefined; }); // stale socket → next connect() rebuilds
     });
     await this.cmd('Runtime.enable');
   }
 
   close(): void {
+    // Fail any in-flight commands so callers don't hang on a socket we're tearing down.
+    for (const resolve of this.pending.values()) resolve({ error: { message: 'Duoke CDP connection closed.' } });
+    this.pending.clear();
     this.ws?.close();
     this.ws = undefined;
+  }
+
+  /** Drop the stale connection and reconnect to a fresh CDP target. */
+  async reconnect(): Promise<void> {
+    this.close();
+    await this.connect();
   }
 
   private onMessage(data: string): void {
@@ -77,18 +97,24 @@ export class DuokeSendDriver {
     if (!this.ws) throw new Error('Duoke send driver not connected.');
     const id = ++this.seq;
     return new Promise((resolve) => {
-      this.pending.set(id, resolve);
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) resolve({ error: { message: 'Duoke CDP timeout.' } });
+      }, 10_000); // a dead socket must not stall the send queue forever
+      this.pending.set(id, (r) => {
+        clearTimeout(timer);
+        resolve(r);
+      });
       this.ws!.send(JSON.stringify({ id, method, params }));
     });
   }
 
   protected async evaluate<T>(expression: string): Promise<T> {
     const res = (await this.cmd('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })) as {
+      error?: { message?: string }; // CDP protocol-level error (e.g. detached frame)
       result?: { result?: { value?: T }; exceptionDetails?: { text?: string } };
     };
-    if (res.result?.exceptionDetails) {
-      throw new Error(`Duoke eval error: ${res.result.exceptionDetails.text ?? 'unknown'}`);
-    }
+    const err = res.error?.message ?? res.result?.exceptionDetails?.text;
+    if (err) throw new Error(`Duoke eval error: ${err}`);
     return res.result?.result?.value as T;
   }
 
@@ -167,8 +193,26 @@ export class DuokeSendDriver {
    * Send a reply into a specific Duoke conversation. Auto-opens the target
    * conversation in Duoke first; refuses unless Duoke's own store confirms that
    * exact conversation is active (so it can never deliver to the wrong customer).
+   *
+   * If Duoke reloaded/navigated and detached the frame our connection pointed at,
+   * reconnect and redo the whole flow ONCE — re-opening, re-composing the text on
+   * the fresh frame, and re-verifying the conversation before it presses Enter.
    */
   async send(opts: { conversationId: string; text: string }): Promise<{ sent: boolean }> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.sendOnce(opts);
+      } catch (e) {
+        if (attempt === 0 && isStaleFrameError(e)) {
+          await this.reconnect();
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  private async sendOnce(opts: { conversationId: string; text: string }): Promise<{ sent: boolean }> {
     await this.connect();
     let cur = await this.currentConversationId();
     if (cur !== opts.conversationId) {
