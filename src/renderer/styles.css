@@ -389,6 +389,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0; /* let the column shrink below its content — otherwise wide order cards / codes pin it open and clip */
+  overflow: hidden;
 }
 .detail-head {
   padding: 14px 20px;
@@ -399,8 +401,17 @@ body {
   justify-content: space-between;
   gap: 12px;
 }
+.detail-head > div:first-child {
+  min-width: 0; /* allow the name/sub to truncate instead of shoving the action buttons off-screen */
+}
 .dh-actions {
   flex-shrink: 0;
+}
+.dh-name,
+.dh-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dh-name {
   font-weight: 650;
@@ -435,6 +446,7 @@ body {
   padding: 9px 13px;
   border-radius: 14px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere; /* long unbroken strings (tracking codes, URLs) wrap instead of overflowing */
 }
 .msg-img {
   display: block;
@@ -484,7 +496,8 @@ body {
 .order-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap; /* id / status / total drop to a new line rather than overflowing when narrow */
+  gap: 6px 8px;
   font-size: 12.5px;
   margin-bottom: 8px;
 }
@@ -913,4 +926,37 @@ textarea:focus {
   color: #fff;
   background: #ef4444;
   border-color: transparent;
+}
+
+/* Responsive: as the window narrows, shrink the thread list and shed chrome so
+   the conversation stays usable instead of the columns just cramping. */
+@media (max-width: 900px) {
+  .body {
+    grid-template-columns: 256px 1fr;
+  }
+  .topbar .subtitle {
+    display: none;
+  }
+  .history {
+    padding: 14px 14px 20px;
+  }
+  .msg {
+    max-width: 86%;
+  }
+}
+@media (max-width: 680px) {
+  .body {
+    grid-template-columns: 208px 1fr;
+  }
+  .topbar {
+    padding: 10px 12px;
+  }
+  .detail-head,
+  .orders {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .msg {
+    max-width: 94%;
+  }
 }
