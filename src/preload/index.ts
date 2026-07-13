@@ -4,6 +4,15 @@ import type { InboxApi, WaNumberState } from '../shared/inbox-api';
 // Thin, typed bridge. The renderer never touches ipcRenderer directly.
 const api: InboxApi = {
   listThreads: () => ipcRenderer.invoke('inbox:listThreads'),
+  searchThreads: (q) => ipcRenderer.invoke('inbox:search', q),
+  listChannels: () => ipcRenderer.invoke('inbox:channels'),
+  triageCounts: () => ipcRenderer.invoke('inbox:triageCounts'),
+  relatedThreads: (threadId) => ipcRenderer.invoke('inbox:related', threadId),
+  assignThread: (threadId, assignee) => ipcRenderer.invoke('inbox:assign', threadId, assignee),
+  listStaff: () => ipcRenderer.invoke('staff:get'),
+  setStaff: (staff, me) => ipcRenderer.invoke('staff:set', staff, me),
+  getUiPrefs: () => ipcRenderer.invoke('ui:get'),
+  setUiPrefs: (patch) => ipcRenderer.invoke('ui:set', patch),
   getHistory: (threadId) => ipcRenderer.invoke('inbox:getHistory', threadId),
   health: () => ipcRenderer.invoke('inbox:health'),
   threadOrders: (threadId) => ipcRenderer.invoke('duoke:orders', threadId),

@@ -1,4 +1,4 @@
-import type { Draft, Message, ThreadView } from '../core/types';
+import type { ChannelSummary, Draft, Message, ThreadView, TriageCounts } from '../core/types';
 import type { WaGuardStatus } from '../core/channels/whatsapp/WhatsAppGuard';
 import type { SendEvent } from '../main/SendQueue';
 import type { ChannelHealthRow } from '../core/InboxService';
@@ -8,9 +8,18 @@ export type { SendEvent } from '../main/SendQueue';
 export type { ChannelHealthRow } from '../core/InboxService';
 export type { NormalizedDuokeOrder } from '../core/channels/duoke/normalize';
 
+export type { ChannelSummary, TriageCounts } from '../core/types';
+
 export interface HealthStatus {
   channels: ChannelHealthRow[];
   draft: { ok: boolean; error?: string };
+}
+
+export interface UiPrefs {
+  railCollapsed: boolean;
+  contextOpen: boolean;
+  autoDraft: boolean;
+  autoAdvance: boolean;
 }
 
 export interface ProviderInfo {
@@ -41,6 +50,22 @@ export interface WaNumberState {
  */
 export interface InboxApi {
   listThreads(): Promise<ThreadView[]>;
+  /** Search by customer name / phone / id / message body. Empty query → []. */
+  searchThreads(q: string): Promise<ThreadView[]>;
+  /** One row per connected channel + live counts, for the nav rail. */
+  listChannels(): Promise<ChannelSummary[]>;
+  /** Triage counts (needs / assigned-to-me / all / done) for the rail. */
+  triageCounts(): Promise<TriageCounts>;
+  /** Other threads for the same person on other channels. */
+  relatedThreads(threadId: string): Promise<ThreadView[]>;
+  /** Route a thread to a staff member (null unassigns). */
+  assignThread(threadId: string, assignee: string | null): Promise<void>;
+  /** Assignable staff + who "me" is on this machine. */
+  listStaff(): Promise<{ staff: string[]; me: string }>;
+  setStaff(staff: string[], me: string): Promise<{ staff: string[]; me: string }>;
+  /** Persisted UI prefs (rail/context layout + AI/queue behaviour). */
+  getUiPrefs(): Promise<UiPrefs>;
+  setUiPrefs(patch: Partial<UiPrefs>): Promise<UiPrefs>;
   getHistory(threadId: string): Promise<Message[]>;
   /** Live channel + drafting health, for status banners. */
   health(): Promise<HealthStatus>;

@@ -117,6 +117,16 @@ function providerList(): Array<{ id: string; label: string; configured: boolean;
   });
 }
 
+/** The renderer-facing UI prefs snapshot (layout + AI/queue behaviour). */
+function uiPrefs() {
+  return {
+    railCollapsed: config.ui.railCollapsed,
+    contextOpen: config.ui.contextOpen,
+    autoDraft: config.autoDraft,
+    autoAdvance: config.autoAdvance,
+  };
+}
+
 /** Persist the live config so provider/label/cap edits survive a restart. */
 function persistConfig(): void {
   try {
@@ -266,6 +276,27 @@ function notifyInbound(e: InboundEvent): void {
 
 function registerIpc(): void {
   ipcMain.handle('inbox:listThreads', () => service.listThreads());
+  ipcMain.handle('inbox:search', (_e, q: string) => service.searchThreads(q));
+  ipcMain.handle('inbox:channels', () => service.channelSummaries());
+  ipcMain.handle('inbox:triageCounts', () => service.countsByTriage());
+  ipcMain.handle('inbox:related', (_e, threadId: string) => service.relatedThreads(threadId));
+  ipcMain.handle('inbox:assign', (_e, threadId: string, assignee: string | null) => service.assignThread(threadId, assignee));
+  ipcMain.handle('staff:get', () => ({ staff: config.staff ?? [], me: config.currentStaff ?? '' }));
+  ipcMain.handle('staff:set', (_e, staff: string[], me: string) => {
+    config.staff = Array.isArray(staff) ? staff.map((s) => s.trim()).filter(Boolean) : [];
+    config.currentStaff = me?.trim() ?? '';
+    persistConfig();
+    return { staff: config.staff, me: config.currentStaff };
+  });
+  ipcMain.handle('ui:get', () => uiPrefs());
+  ipcMain.handle('ui:set', (_e, patch: Partial<ReturnType<typeof uiPrefs>>) => {
+    if (typeof patch.railCollapsed === 'boolean') config.ui.railCollapsed = patch.railCollapsed;
+    if (typeof patch.contextOpen === 'boolean') config.ui.contextOpen = patch.contextOpen;
+    if (typeof patch.autoDraft === 'boolean') config.autoDraft = patch.autoDraft;
+    if (typeof patch.autoAdvance === 'boolean') config.autoAdvance = patch.autoAdvance;
+    persistConfig();
+    return uiPrefs();
+  });
   ipcMain.handle('inbox:getHistory', (_e, threadId: string) => service.getHistory(threadId));
   ipcMain.handle('inbox:health', async () => ({ channels: await service.channelsHealth(), draft: service.draftHealth() }));
   ipcMain.handle('duoke:orders', async (_e, threadId: string) => {

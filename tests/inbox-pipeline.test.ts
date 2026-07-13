@@ -6,10 +6,12 @@ import { EchoProvider } from '../src/core/llm/EchoProvider';
 import { FakeAdapter } from '../src/core/channels/FakeAdapter';
 import { AppConfigSchema } from '../src/core/config/Config';
 
-function makeService() {
+function makeService(over: Record<string, unknown> = {}) {
   const config = AppConfigSchema.parse({
     defaultProvider: 'echo',
+    autoDraft: true, // this harness exercises the drafting pipeline; on-demand gating is tested separately
     channels: { 'fake:demo': { llm: 'echo', autoSend: false } },
+    ...over,
   });
   const store = new InboxStore(':memory:');
   const router = new LlmRouter(config, { echo: new EchoProvider() });
@@ -18,6 +20,29 @@ function makeService() {
   service.registerChannel(fake);
   return { service, fake, store, config };
 }
+
+describe('on-demand AI (autoDraft gate)', () => {
+  it('does NOT auto-draft when autoDraft is off (default), but manual generate still works', async () => {
+    const { service, fake } = makeService({ autoDraft: false });
+    await service.start();
+    await fake.inject({ threadKey: 't1', from: { externalId: 'c1', name: 'Aisha' }, body: 'in stock?' });
+
+    const threadId = service.listThreads()[0]!.thread.id;
+    expect(service.getDraft(threadId)).toBeUndefined(); // no tokens spent until asked
+
+    const draft = await service.generateDraft(threadId); // the Generate button path
+    expect(draft.status).toBe('suggested');
+    expect(service.getDraft(threadId)?.body).toContain('Aisha');
+  });
+
+  it('still auto-drafts when autoDraft is on', async () => {
+    const { service, fake } = makeService({ autoDraft: true });
+    await service.start();
+    await fake.inject({ threadKey: 't1', from: { externalId: 'c1', name: 'Aisha' }, body: 'in stock?' });
+    const threadId = service.listThreads()[0]!.thread.id;
+    expect(service.getDraft(threadId)?.status).toBe('suggested');
+  });
+});
 
 describe('inbox pipeline — fake channel + echo provider', () => {
   it('ingests an inbound message into a thread and auto-drafts a reply, sending nothing', async () => {
@@ -95,7 +120,7 @@ describe('inbox pipeline — fake channel + echo provider', () => {
 
   it('channelsHealth reports a row per registered channel; draftHealth tracks last outcome', async () => {
     let fail = true;
-    const config = AppConfigSchema.parse({ defaultProvider: 'flaky' });
+    const config = AppConfigSchema.parse({ defaultProvider: 'flaky', autoDraft: true });
     const store = new InboxStore(':memory:');
     const router = new LlmRouter(config, {
       flaky: { id: 'flaky', async draftReply() { if (fail) throw new Error('Ollama unreachable'); return { text: 'ok', providerId: 'flaky', model: 'm' }; } },

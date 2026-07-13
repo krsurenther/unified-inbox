@@ -117,6 +117,7 @@ export class InboxService {
    * durable-edit contract and it kills the push/pull asymmetry (stale pull drafts).
    */
   private async maybeDraft(threadId: string, opts: { newInbound: boolean }): Promise<void> {
+    if (!this.config.autoDraft) return; // on-demand only: the operator presses Generate (saves tokens)
     if (!opts.newInbound) return;
     if (this.store.isThreadMuted(threadId)) return; // muted threads ("not a customer") don't draft
     const view = this.store.getThreadView(threadId);
@@ -333,5 +334,26 @@ export class InboxService {
 
   getDraft(threadId: string): Draft | undefined {
     return this.store.getLatestDraft(threadId);
+  }
+
+  searchThreads(q: string): ThreadView[] {
+    return this.store.searchThreads(q);
+  }
+
+  channelSummaries() {
+    return this.store.channelSummaries();
+  }
+
+  countsByTriage() {
+    return this.store.countsByTriage(this.config.currentStaff || undefined);
+  }
+
+  relatedThreads(threadId: string): ThreadView[] {
+    return this.store.relatedThreads(threadId);
+  }
+
+  /** Route a thread to a staff member (or null to unassign). */
+  assignThread(threadId: string, assignee: string | null): void {
+    this.store.assignThread(threadId, assignee);
   }
 }

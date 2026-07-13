@@ -36,7 +36,7 @@ function pullAdapter(): ChannelAdapter {
 }
 
 function makeService() {
-  const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
+  const config = AppConfigSchema.parse({ defaultProvider: 'echo', autoDraft: true });
   const store = new InboxStore(':memory:');
   const router = new LlmRouter(config, { echo: new EchoProvider() });
   const service = new InboxService({ store, router, config });
@@ -77,7 +77,7 @@ describe('InboxService.syncChannel (pull-style adapter)', () => {
 
   it('fires onInbound for each new inbound via syncChannel, but not on re-sync', async () => {
     const events: Array<{ body: string }> = [];
-    const config = AppConfigSchema.parse({ defaultProvider: 'echo' });
+    const config = AppConfigSchema.parse({ defaultProvider: 'echo', autoDraft: true });
     const store = new InboxStore(':memory:');
     const router = new LlmRouter(config, { echo: new EchoProvider() });
     const service = new InboxService({ store, router, config, onInbound: (e) => events.push(e) });
@@ -93,7 +93,7 @@ describe('InboxService.syncChannel (pull-style adapter)', () => {
 
   it('sync regenerates a suggested draft on new inbound, but leaves an edited draft alone', async () => {
     let n = 0;
-    const config = AppConfigSchema.parse({ defaultProvider: 'count' });
+    const config = AppConfigSchema.parse({ defaultProvider: 'count', autoDraft: true });
     const store = new InboxStore(':memory:');
     const router = new LlmRouter(config, {
       count: { id: 'count', async draftReply() { return { text: `d${++n}`, providerId: 'count', model: 'm' }; } },
