@@ -1,14 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadView } from '../core/types';
 import type { MessageMedia } from '../core/channels/ChannelAdapter';
-import type { HealthStatus, NormalizedDuokeOrder, ProviderInfo, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
+import type { ChannelSummary, HealthStatus, NormalizedDuokeOrder, ProviderInfo, TriageCounts, UiPrefs, WaGuardStatus, WaNumberState } from '../shared/inbox-api';
 import { needsReply } from '../core/triage';
 import { formatRelative } from './time';
+import { mediaLabel } from './mediaLabel';
+import { Icon, type IconName } from './Icon';
 import { inbox } from './api';
 
-type Filter = 'needs' | 'all' | 'whatsapp' | 'marketplace' | 'webstore' | 'done';
+/** A triage bucket or a specific channel account. */
+type Triage = 'needs' | 'mine' | 'all' | 'done';
+type Filter = Triage | { channelId: string };
 type SortBy = 'newest' | 'oldest';
 const isActive = (t: ThreadView) => t.thread.status !== 'closed';
+
+// Deterministic accent per channel kind (avatars + dots + chips).
+const CHANNEL_COLOR: Record<string, string> = { whatsapp: '#34d399', duoke: '#ff8a5c', webstore: '#6ee7f2', fake: '#8b93a7' };
+const channelIcon = (kind: string): IconName => (kind === 'whatsapp' ? 'phone' : kind === 'webstore' ? 'globe' : 'bag');
+const initials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0]!.replace(/^\+?/, '').slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+};
+/** Group history messages by local calendar day for separators. */
+const dayKey = (iso: string): string => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const dayLabel = (iso: string): string => {
+  const d = new Date(iso);
+  const today = new Date();
+  const y = new Date(today);
+  y.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return dayKey(iso);
+};
+const shortTime = (iso: string): string => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
 export function App() {
   const [threads, setThreads] = useState<ThreadView[]>([]);
@@ -37,8 +63,19 @@ export function App() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [orders, setOrders] = useState<NormalizedDuokeOrder[]>([]);
-  const [filter, setFilter] = useState<Filter>('needs'); // G8: default to the work queue
+  const [filter, setFilter] = useState<Filter>('needs'); // default to the work queue
   const [sortBy, setSortBy] = useState<SortBy>('newest');
+  const [sortOpen, setSortOpen] = useState(false);
+  const [channels, setChannels] = useState<ChannelSummary[]>([]);
+  const [triage, setTriage] = useState<TriageCounts>({ needs: 0, mine: 0, all: 0, done: 0 });
+  const [staff, setStaff] = useState<string[]>([]);
+  const [me, setMe] = useState('');
+  const [prefs, setPrefs] = useState<UiPrefs>({ railCollapsed: false, contextOpen: true, autoDraft: false, autoAdvance: false });
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<ThreadView[] | null>(null); // non-null while searching
+  const [related, setRelated] = useState<ThreadView[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const refreshThreads = useCallback(async () => {
     const t = await inbox.listThreads();
@@ -59,42 +96,21 @@ export function App() {
   const duokeDown = !!health && !health.channels.some((c) => c.kind === 'duoke' && c.health.connected);
   const draftDown = !!health && !health.draft.ok;
 
-  const counts = useMemo(() => {
-    let needs = 0;
-    let all = 0;
-    let whatsapp = 0;
-    let marketplace = 0;
-    let webstore = 0;
-    let done = 0;
-    for (const t of threads) {
-      if (t.thread.status === 'closed') { done += 1; continue; }
-      all += 1;
-      if (needsReply(t)) needs += 1;
-      if (t.channel.kind === 'duoke') marketplace += 1;
-      else if (t.channel.kind === 'whatsapp') whatsapp += 1;
-      else if (t.channel.kind === 'webstore') webstore += 1;
-    }
-    return { needs, all, whatsapp, marketplace, webstore, done };
-  }, [threads]);
-
   const filteredThreads = useMemo(() => {
+    if (results) return results; // search overrides filter+sort (already ordered newest-first)
     let list: ThreadView[];
-    switch (filter) {
-      case 'needs': list = threads.filter(needsReply); break;
-      case 'done': list = threads.filter((t) => t.thread.status === 'closed'); break;
-      case 'whatsapp': list = threads.filter((t) => isActive(t) && t.channel.kind === 'whatsapp'); break;
-      case 'marketplace': list = threads.filter((t) => isActive(t) && t.channel.kind === 'duoke'); break;
-      case 'webstore': list = threads.filter((t) => isActive(t) && t.channel.kind === 'webstore'); break;
-      default: list = threads.filter(isActive);
-    }
-    // Sort by receive time. ISO-8601 sorts lexicographically = chronologically.
+    if (typeof filter === 'object') list = threads.filter((t) => isActive(t) && t.channel.id === filter.channelId);
+    else if (filter === 'needs') list = threads.filter(needsReply);
+    else if (filter === 'mine') list = threads.filter((t) => isActive(t) && !!me && t.assignee === me);
+    else if (filter === 'done') list = threads.filter((t) => t.thread.status === 'closed');
+    else list = threads.filter(isActive);
     const dir = sortBy === 'oldest' ? 1 : -1;
     return [...list].sort((a, b) => {
       const av = a.thread.lastMessageAt ?? '';
       const bv = b.thread.lastMessageAt ?? '';
       return av === bv ? 0 : dir * (av < bv ? -1 : 1);
     });
-  }, [threads, filter, sortBy]);
+  }, [threads, filter, sortBy, results, me]);
 
   // Load the composer from a draft programmatically (resets the dirty flag).
   const applyDraft = useCallback((id: string | null, body: string) => {
@@ -128,25 +144,12 @@ export function App() {
       if (cancelled) return;
       setHistory(h);
       const draft = all.find((x) => x.thread.id === selectedId)?.draft;
-      // Use an existing real draft; the old `echo` placeholders regenerate on open.
+      // On-demand AI: load a real, unsent draft if one already exists; otherwise start empty.
+      // The operator presses Generate to draft — we never auto-spend tokens on open.
       if (draft && draft.status !== 'sent' && draft.model !== 'placeholder' && draft.providerId !== 'echo') {
         applyDraft(draft.id, draft.body);
-        return;
-      }
-      const last = h[h.length - 1];
-      if (last?.direction === 'inbound') {
-        applyDraft(null, '');
-        setDrafting(true);
-        try {
-          const d = await inbox.regenerateDraft(selectedId);
-          if (!cancelled && !dirtyRef.current) applyDraft(d.id, d.body); // don't clobber text typed while drafting
-        } catch {
-          if (!cancelled && !dirtyRef.current) applyDraft(null, '');
-        } finally {
-          if (!cancelled) setDrafting(false);
-        }
       } else {
-        applyDraft(draft && draft.status !== 'sent' ? draft.id : null, draft && draft.status !== 'sent' ? draft.body : '');
+        applyDraft(null, '');
       }
     })();
     return () => {
@@ -154,15 +157,59 @@ export function App() {
     };
   }, [selectedId, applyDraft, refreshThreads]);
 
-  // Poll for newly-synced threads + messages. Refreshes the list and the open
-  // thread's history, but never the draft textarea (so edits survive).
+  // Rail data (channels + triage counts) — refreshed with the poll below.
+  const refreshRail = useCallback(async () => {
+    const [ch, tri] = await Promise.all([inbox.listChannels(), inbox.triageCounts()]);
+    setChannels(ch);
+    setTriage(tri);
+  }, []);
+
+  // Poll for newly-synced threads + messages + rail counts. Never touches the draft box.
   useEffect(() => {
     const iv = setInterval(async () => {
       await refreshThreads();
+      await refreshRail();
       if (selectedId) setHistory(await inbox.getHistory(selectedId));
     }, 3000);
     return () => clearInterval(iv);
-  }, [selectedId, refreshThreads]);
+  }, [selectedId, refreshThreads, refreshRail]);
+
+  // One-time load: rail, staff, UI prefs.
+  useEffect(() => {
+    void refreshRail();
+    inbox.listStaff().then((s) => { setStaff(s.staff); setMe(s.me); }).catch(() => {});
+    inbox.getUiPrefs().then(setPrefs).catch(() => {});
+  }, [refreshRail]);
+
+  // Debounced search — matches name / phone / id / message body server-side.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setResults(null); return; }
+    const h = setTimeout(() => { inbox.searchThreads(q).then(setResults).catch(() => setResults([])); }, 180);
+    return () => clearTimeout(h);
+  }, [query]);
+
+  // ⌘K / '/' focuses search (unless typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Related threads (same customer on other channels) for the context panel.
+  useEffect(() => {
+    if (!selectedId) { setRelated([]); return; }
+    let cancelled = false;
+    inbox.relatedThreads(selectedId).then((r) => { if (!cancelled) setRelated(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   // Marketplace order/product card — fetched lazily on thread open (main returns [] for non-Duoke).
   useEffect(() => {
@@ -330,8 +377,14 @@ export function App() {
 
   const setStatus = async (threadId: string, status: 'open' | 'closed') => {
     await inbox.setThreadStatus(threadId, status);
-    if (status === 'closed' && threadId === selectedId) setSelectedId(null); // it left the active view
-    await refreshThreads();
+    if (status === 'closed' && threadId === selectedId) {
+      // Auto-advance to the next unanswered thread when working a queue (opt-in); else leave the view.
+      const next = prefs.autoAdvance && (filter === 'needs' || filter === 'mine')
+        ? filteredThreads.find((t) => t.thread.id !== threadId && needsReply(t))?.thread.id ?? null
+        : null;
+      setSelectedId(next);
+    }
+    await Promise.all([refreshThreads(), refreshRail()]);
     flash(status === 'closed' ? 'Marked done ✓' : 'Reopened');
   };
 
@@ -358,177 +411,238 @@ export function App() {
     flash(linked ? 'WhatsApp unlinked' : 'Connect cancelled');
   };
 
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo">▦</span>
-          <div>
-            <div className="title">Unified Inbox</div>
-            <div className="subtitle">All channels · AI drafts · you approve &amp; send</div>
-          </div>
-        </div>
-        <div className="top-actions">
-          {providers.length > 0 && (
-            <label className="ai-pick" title="Which AI drafts replies">
-              <span>✨ AI</span>
-              <select value={providers.find((p) => p.active)?.id ?? ''} onChange={(e) => onPickProvider(e.target.value)}>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                    {p.configured ? '' : ' (needs key)'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <button className="btn ghost" onClick={() => setKeysOpen(true)}>
-            ⚙️ AI settings
-          </button>
-          <button className="btn ghost" onClick={() => setWaOpen(true)}>
-            ✆ WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' ✓' : ''}
-            {waGuard?.killed ? ' ⛔' : waGuard?.numbers.some((n) => n.risk === 'high') ? ' ⚠️' : ''}
-          </button>
-        </div>
-      </header>
+  const assign = async (threadId: string, who: string | null) => {
+    await inbox.assignThread(threadId, who);
+    setAssignOpen(false);
+    await Promise.all([refreshThreads(), refreshRail()]);
+    flash(who ? `Assigned to ${who}` : 'Unassigned');
+  };
 
-      <div className="body">
-        <aside className="threadlist">
-          <div className="tabs">
-            {(
-              [
-                ['needs', 'Needs reply'],
-                ['all', 'All'],
-                ['whatsapp', 'WhatsApp'],
-                ['marketplace', 'Marketplace'],
-                ['webstore', 'Webstore'],
-                ['done', 'Done'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                className={`tab ${filter === key ? 'active' : ''}`}
-                onClick={() => setFilter(key)}
-              >
-                {label}
-                <span className="tab-count">{counts[key]}</span>
-              </button>
-            ))}
-          </div>
-          <div className="sortbar">
-            <span className="sortbar-label">Sort by time</span>
-            <div className="sort-opts">
-              <button className={`sort-opt ${sortBy === 'newest' ? 'active' : ''}`} onClick={() => setSortBy('newest')}>Newest</button>
-              <button className={`sort-opt ${sortBy === 'oldest' ? 'active' : ''}`} onClick={() => setSortBy('oldest')}>Oldest</button>
-            </div>
-          </div>
-          {(filter === 'marketplace' || filter === 'all') && duokeDown && (
-            <div className="banner warn">⚠ Marketplaces not syncing — open Duoke and log in.</div>
-          )}
-          {filteredThreads.length === 0 && <div className="empty">No conversations here.</div>}
-          {filteredThreads.map((t) => (
+  const savePrefs = async (patch: Partial<UiPrefs>) => setPrefs(await inbox.setUiPrefs(patch));
+  const toggleRail = () => savePrefs({ railCollapsed: !prefs.railCollapsed });
+  const toggleContext = () => savePrefs({ contextOpen: !prefs.contextOpen });
+
+  const saveStaff = async (names: string[], meName: string) => {
+    const r = await inbox.setStaff(names, meName);
+    setStaff(r.staff);
+    setMe(r.me);
+    flash('Team saved ✓');
+  };
+
+  // Keyboard loop: ↑↓ move threads, ⌘⏎ send, ⌘G generate, ⌘R regenerate, E done, Esc back.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 'Enter') { e.preventDefault(); if (selectedId && draftBody.trim()) void onSend(); return; }
+      if (mod && (e.key === 'g' || e.key === 'r')) { e.preventDefault(); if (selectedId) void onRegenerate(); return; }
+      if (typing) return;
+      if (e.key === 'Escape') { setSelectedId(null); return; }
+      if (e.key === 'e' && selectedId) { e.preventDefault(); void setStatus(selectedId, 'closed'); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const list = filteredThreads;
+        if (!list.length) return;
+        const i = list.findIndex((t) => t.thread.id === selectedId);
+        const next = e.key === 'ArrowDown' ? Math.min(i + 1, list.length - 1) : Math.max(i - 1, 0);
+        setSelectedId(list[i === -1 ? 0 : next]!.thread.id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, draftBody, filteredThreads]);
+
+  return (
+    <div className={`app4 ${prefs.railCollapsed ? 'rail-collapsed' : ''}`}>
+      {/* ZONE 1 — channel nav rail */}
+      <nav className="rail">
+        <div className="rail-group rail-triage">
+          {([
+            ['needs', 'inbox', 'Needs reply', triage.needs, true],
+            ['mine', 'user', 'Assigned to me', triage.mine, false],
+            ['all', 'list', 'All', triage.all, false],
+            ['done', 'check', 'Done', triage.done, false],
+          ] as const).map(([key, icon, label, n, hot]) => (
             <button
-              key={t.thread.id}
-              className={`thread ${t.thread.id === selectedId ? 'active' : ''}`}
-              onClick={() => setSelectedId(t.thread.id)}
+              key={key}
+              className={`rail-item ${filter === key ? 'active' : ''}`}
+              onClick={() => { setFilter(key); setQuery(''); }}
+              title={label}
             >
-              <div className="thread-top">
-                <span className="who">{t.customer.name ?? t.customer.externalId}</span>
-                <span className="thread-time">{formatRelative(t.thread.lastMessageAt)}</span>
-                {t.thread.unread > 0 && <span className="badge">{t.thread.unread}</span>}
-              </div>
-              <div className="preview">
-                {t.lastMessageDirection === 'outbound' && <span className="you">You: </span>}
-                {t.lastMessagePreview ?? '—'}
-              </div>
-              <div className="thread-foot">
-                <span className={`chan chan-${t.channel.kind}`}>{t.channel.label}</span>
-                {t.muted && <span className="muted-tag">🔇</span>}
-                {!t.muted && t.draft && t.draft.status !== 'sent' && <span className="dot-draft">draft ready</span>}
-              </div>
+              <Icon name={icon} />
+              <span className="rail-text">{label}</span>
+              <span className={`n ${hot && n > 0 ? 'hot' : ''}`}>{n}</span>
             </button>
           ))}
-        </aside>
+        </div>
+        {(['whatsapp', 'duoke', 'webstore'] as const).map((kind) => {
+          const rows = channels.filter((c) => c.kind === kind && (kind !== 'webstore' || c.total > 0));
+          if (!rows.length) return null;
+          const groupLabel = kind === 'whatsapp' ? 'WhatsApp' : kind === 'duoke' ? 'Marketplace' : 'Webstore';
+          return (
+            <div className="rail-group" key={kind}>
+              <div className="rail-label">{groupLabel}</div>
+              {rows.map((c) => (
+                <button
+                  key={c.channelId}
+                  className={`rail-item ${typeof filter === 'object' && filter.channelId === c.channelId ? 'active' : ''}`}
+                  onClick={() => { setFilter({ channelId: c.channelId }); setQuery(''); }}
+                  title={c.label}
+                >
+                  <span className="dot" style={{ background: CHANNEL_COLOR[c.kind] }} />
+                  <span className="rail-text">{c.label}</span>
+                  <span className={`n ${c.needs > 0 ? 'hot' : ''}`}>{c.needs > 0 ? c.needs : c.total}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })}
+        <div className="rail-foot">
+          <button className="rail-item" onClick={() => setKeysOpen(true)} title="AI settings"><Icon name="gear" /><span className="rail-text">AI settings</span></button>
+          <button className="rail-item" onClick={() => setWaOpen(true)} title="WhatsApp connection">
+            <Icon name="phone" /><span className="rail-text">WhatsApp{waNumbers.some((n) => n.state === 'ready') ? ' · linked' : ''}</span>
+            {waGuard?.killed && <span className="dot" style={{ background: '#ef4444' }} />}
+          </button>
+          <button className="rail-item rail-collapse" onClick={toggleRail} title={prefs.railCollapsed ? 'Expand' : 'Collapse'}>
+            <Icon name="chevron-left" /><span className="rail-text">Collapse</span>
+          </button>
+        </div>
+      </nav>
 
-        <main className="detail">
-          {!selected && <div className="placeholder">Select a conversation to see its history and AI draft.</div>}
+      {/* ZONE 2 — thread list */}
+      <aside className="list">
+        <div className="list-head">
+          <div className="filter-box">
+            <Icon name="search" size={13} />
+            <input
+              ref={searchRef}
+              placeholder="Name, phone, or message…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query
+              ? <button className="filter-x" onClick={() => setQuery('')} title="Clear (Esc)"><Icon name="x" size={12} /></button>
+              : <span className="kbd">⌘K</span>}
+          </div>
+          <div className="sort-wrap">
+            <button className="sort-mini" onClick={() => setSortOpen((v) => !v)}>{sortBy === 'newest' ? 'Newest' : 'Oldest'} <Icon name="chevron-down" size={11} /></button>
+            {sortOpen && (
+              <div className="sort-menu" onMouseLeave={() => setSortOpen(false)}>
+                <button onClick={() => { setSortBy('newest'); setSortOpen(false); }}>Newest first</button>
+                <button onClick={() => { setSortBy('oldest'); setSortOpen(false); }}>Oldest first</button>
+              </div>
+            )}
+          </div>
+        </div>
+        {(typeof filter === 'object' || filter === 'all') && duokeDown && (
+          <div className="banner warn">⚠ Marketplaces not syncing — open Duoke and log in.</div>
+        )}
+        <div className="threads">
+          {results && <div className="search-note">{results.length} result{results.length === 1 ? '' : 's'} for “{query.trim()}”</div>}
+          {filteredThreads.length === 0 && <div className="empty">{results ? 'No matches.' : 'No conversations here.'}</div>}
+          {filteredThreads.map((t) => {
+            const name = t.customer.name ?? t.customer.externalId;
+            const ml = mediaLabel(t.lastMessagePreview ?? '');
+            return (
+              <button
+                key={t.thread.id}
+                className={`row ${t.thread.id === selectedId ? 'active' : ''}`}
+                onClick={() => setSelectedId(t.thread.id)}
+              >
+                <span className="ava" style={{ background: CHANNEL_COLOR[t.channel.kind] }}>{initials(name)}</span>
+                <span className="row-main">
+                  <span className="row-top">
+                    <span className="row-name">{name}</span>
+                    <span className="row-time">{formatRelative(t.thread.lastMessageAt)}</span>
+                    {t.thread.unread > 0 && <span className="unread">{t.thread.unread}</span>}
+                  </span>
+                  <span className="row-prev">
+                    {t.lastMessageDirection === 'outbound' && <span className="you">You: </span>}
+                    {ml ? <span className="ml"><Icon name={ml.icon} size={12} /> {ml.label}</span> : (t.lastMessagePreview ?? '—')}
+                  </span>
+                  <span className="row-foot">
+                    <span className="chip" style={{ color: CHANNEL_COLOR[t.channel.kind], background: CHANNEL_COLOR[t.channel.kind] + '22' }}>{t.channel.label}</span>
+                    {t.muted && <Icon name="mute" size={12} className="muted-tag" />}
+                    {!t.muted && t.draft && t.draft.status !== 'sent' && <span className="draft-ok"><Icon name="sparkle" size={11} /> draft</span>}
+                    {t.assignee && <span className="assignee" title={`Assigned to ${t.assignee}`}>{initials(t.assignee)}</span>}
+                  </span>
+                </span>
+                <span className="quick">
+                  <span onClick={(e) => { e.stopPropagation(); void setStatus(t.thread.id, 'closed'); }} title="Done"><Icon name="check" size={12} /></span>
+                  <span onClick={(e) => { e.stopPropagation(); void toggleMuted(t.thread.id, !t.muted); }} title={t.muted ? 'Unmute' : 'Mute'}><Icon name="mute" size={12} /></span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+        <main className="convo">
+          {!selected && <div className="placeholder">Select a conversation to see its history.</div>}
 
           {selected && (
             <>
-              <div className="detail-head">
-                <div>
-                  <div className="dh-name">{selected.customer.name ?? selected.customer.externalId}</div>
-                  <div className="dh-sub">
-                    {selected.channel.label} · {selected.customer.externalId}
-                  </div>
+              <div className="convo-head">
+                <div className="convo-id">
+                  <div className="convo-name">{selected.customer.name ?? selected.customer.externalId}</div>
+                  <div className="convo-sub">{selected.channel.label} · {selected.customer.externalId}</div>
                 </div>
-                <div className="dh-actions">
-                  <button className="btn ghost" onClick={() => toggleMuted(selected.thread.id, !selected.muted)}>
-                    {selected.muted ? '🔔 Unmute' : '🔇 Not a customer'}
+                <div className="convo-actions">
+                  <div className="assign-wrap">
+                    <button className="assign-chip" onClick={() => setAssignOpen((v) => !v)} title="Assign to staff">
+                      {selected.assignee
+                        ? <><span className="assignee">{initials(selected.assignee)}</span> {selected.assignee}</>
+                        : <><Icon name="user-plus" size={13} /> Assign</>}
+                      <Icon name="chevron-down" size={11} />
+                    </button>
+                    {assignOpen && (
+                      <div className="assign-menu" onMouseLeave={() => setAssignOpen(false)}>
+                        {staff.length === 0 && <div className="assign-empty">Add staff in AI settings → Team</div>}
+                        {staff.map((s) => (
+                          <button key={s} onClick={() => assign(selected.thread.id, s)}>{s}{s === me ? ' (me)' : ''}</button>
+                        ))}
+                        {selected.assignee && <button className="assign-clear" onClick={() => assign(selected.thread.id, null)}>Unassign</button>}
+                      </div>
+                    )}
+                  </div>
+                  <button className="btn icon-btn" onClick={() => toggleMuted(selected.thread.id, !selected.muted)} title={selected.muted ? 'Unmute' : 'Not a customer'}>
+                    <Icon name="mute" size={14} />
                   </button>
-                  {selected.thread.status === 'closed' ? (
-                    <button className="btn ghost" onClick={() => setStatus(selected.thread.id, 'open')}>↩ Reopen</button>
-                  ) : (
-                    <button className="btn ghost" onClick={() => setStatus(selected.thread.id, 'closed')}>✓ Done</button>
-                  )}
+                  {selected.thread.status === 'closed'
+                    ? <button className="btn" onClick={() => setStatus(selected.thread.id, 'open')}><Icon name="refresh" size={13} /> Reopen</button>
+                    : <button className="btn" onClick={() => setStatus(selected.thread.id, 'closed')}><Icon name="check" size={13} /> Done</button>}
+                  {!prefs.contextOpen && <button className="btn icon-btn" onClick={toggleContext} title="Show customer panel"><Icon name="info" size={14} /></button>}
                 </div>
               </div>
 
-              {orders.length > 0 && (
-                <div className="orders">
-                  {orders.map((o) => (
-                    <div key={o.orderId} className="order-card">
-                      <div className="order-top">
-                        <span className="order-id">#{o.orderId}</span>
-                        {o.status && <span className="order-status">{o.status}</span>}
-                        <span className="order-total">{o.currency} {o.total.toFixed(2)}</span>
-                      </div>
-                      {o.items.map((it, i) => (
-                        <div key={i} className="order-item">
-                          {it.imageUrl && <img className="order-img" src={it.imageUrl} alt="" />}
-                          <div className="order-item-info">
-                            <div className="order-item-name">{it.name}</div>
-                            <div className="order-item-sub">
-                              {it.sku && <span>SKU {it.sku}</span>}
-                              {it.variation && <span> · {it.variation}</span>}
-                              <span> · ×{it.quantity}</span>
-                            </div>
-                          </div>
-                          <div className="order-item-price">{it.currency} {it.price.toFixed(2)}</div>
-                        </div>
-                      ))}
-                      {(o.paymentMethod || o.trackingNumber || o.logisticsStatus) && (
-                        <div className="order-foot">
-                          {o.paymentMethod && <span>{o.paymentMethod}</span>}
-                          {o.trackingNumber && <span>📦 {o.logisticsService ?? ''} {o.trackingNumber}</span>}
-                          {o.logisticsStatus && <span>{o.logisticsStatus}</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <div className="history" ref={historyRef} onScroll={onHistoryScroll}>
-                {history.map((m) => {
+                {history.map((m, idx) => {
                   const media = (m.meta as { media?: MessageMedia } | undefined)?.media;
                   const src = media?.dataUri ?? media?.url;
-                  // kind may be absent on media stored before it existed — infer from mimetype.
                   const mime = media?.mimetype ?? '';
                   const kind =
                     media?.kind ??
                     (mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : media ? 'image' : undefined);
-                  const isPlaceholder = /\[[a-z ]+\]$/i.test(m.body.trim()); // "[image]", "[video]", "🖼️ [image]", …
+                  const ml = mediaLabel(m.body, kind);
+                  const showText = !!m.body && !ml && !(media && /\[[a-z ]+\]$/i.test(m.body.trim()));
+                  const prev = history[idx - 1];
+                  const sep = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
                   return (
-                    <div key={m.id} className={`msg ${m.direction}`}>
-                      <div className="bubble">
-                        {kind === 'image' && src && <img className="msg-img" src={src} alt="attachment" />}
-                        {kind === 'video' && src && <video className="msg-video" src={src} controls preload="metadata" />}
-                        {kind === 'audio' && src && <audio className="msg-audio" src={src} controls preload="metadata" />}
-                        {kind === 'file' && <span className="msg-file">📎 {media?.filename ?? 'attachment'}</span>}
-                        {m.body && !(media && isPlaceholder) && <div className="bubble-text">{m.body}</div>}
+                    <div key={m.id} className="msg-wrap">
+                      {sep && <div className="day">{dayLabel(m.createdAt)}</div>}
+                      <div className={`msg ${m.direction}`}>
+                        <div className="bubble">
+                          {kind === 'image' && src && <img className="msg-img" src={src} alt="attachment" />}
+                          {kind === 'video' && src && <video className="msg-video" src={src} controls preload="metadata" />}
+                          {kind === 'audio' && src && <audio className="msg-audio" src={src} controls preload="metadata" />}
+                          {kind === 'file' && <span className="msg-file"><Icon name="clip" size={13} /> {media?.filename ?? 'attachment'}</span>}
+                          {ml && <span className="mchip"><Icon name={ml.icon} size={13} /> {ml.label}</span>}
+                          {showText && <div className="bubble-text">{m.body}</div>}
+                          <span className="t">{shortTime(m.createdAt)}</span>
+                        </div>
                       </div>
-                      <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
                     </div>
                   );
                 })}
@@ -538,12 +652,13 @@ export function App() {
                 <div className="composer-head">
                   <span className={`ai-tag ${drafting ? 'pulse' : ''}`}>
                     {drafting
-                      ? '✨ Drafting with AI…'
+                      ? 'Drafting with AI…'
                       : selected.draft?.status === 'edited'
-                        ? '✍️ Edited by you'
-                        : `✨ AI suggestion${selected.draft?.providerId && selected.draft.providerId !== 'echo' ? ` · ${selected.draft.providerId}` : ''}`}
+                        ? 'Edited by you'
+                        : draftBody.trim()
+                          ? `AI suggestion${selected.draft?.providerId && selected.draft.providerId !== 'echo' ? ` · ${selected.draft.providerId}` : ''}`
+                          : `Reply as ${selected.channel.label}`}
                   </span>
-                  <span className="safety">🔒 Auto-send OFF · human approval required</span>
                 </div>
                 {draftDown && !drafting && !draftBody.trim() && (
                   <div className="banner warn">⚠ Drafting unavailable — {health?.draft.error}. Is Ollama running?</div>
@@ -555,31 +670,99 @@ export function App() {
                       className="send-error-x"
                       onClick={() => setSendStates((s) => { const n = { ...s }; if (selectedId) delete n[selectedId]; return n; })}
                     >
-                      ✕
+                      <Icon name="x" size={11} />
                     </button>
                   </div>
                 )}
                 <textarea
                   value={draftBody}
                   onChange={(e) => onDraftChange(e.target.value)}
-                  placeholder={drafting ? 'Generating a reply…' : 'No draft yet — click Regenerate.'}
+                  placeholder={drafting ? 'Generating a reply…' : 'Type a reply, or generate one…'}
                   rows={4}
                 />
                 <div className="composer-actions">
-                  <button className="btn ghost" onClick={onRegenerate} disabled={pacing || drafting}>
-                    {drafting ? '⋯ Generating' : '↻ Regenerate'}
+                  <button className="btn gen" onClick={onRegenerate} disabled={pacing || drafting}>
+                    <Icon name="sparkle" size={13} /> {drafting ? 'Generating…' : draftBody.trim() ? 'Regenerate' : 'Generate with AI'} <span className="kbd">⌘G</span>
                   </button>
+                  <span className="spacer" />
+                  <span className="safety-foot"><Icon name="lock" size={11} /> approval required</span>
                   <button className="btn primary" onClick={onSend} disabled={pacing || drafting || !draftBody.trim()}>
-                    {pacing
-                      ? `⋯ Sending…${sending?.etaMs ? ` ~${Math.ceil(sending.etaMs / 1000)}s (pacing)` : ''}`
-                      : '✓ Approve & Send'}
+                    <Icon name="send" size={13} /> {pacing ? `Sending…${sending?.etaMs ? ` ~${Math.ceil(sending.etaMs / 1000)}s` : ''}` : 'Send'} <span className="kbd">⌘⏎</span>
                   </button>
                 </div>
               </div>
             </>
           )}
         </main>
-      </div>
+
+        {/* ZONE 4 — customer & orders context */}
+        {selected && prefs.contextOpen && (
+          <aside className="ctx">
+            <div className="ctx-head">
+              <Icon name="info" size={14} /> Customer
+              <button className="ctx-x" onClick={toggleContext} title="Hide panel"><Icon name="x" size={12} /></button>
+            </div>
+            <div className="ctx-body">
+              <div className="card">
+                <div className="cust-top">
+                  <span className="cust-ava" style={{ background: CHANNEL_COLOR[selected.channel.kind] }}>{initials(selected.customer.name ?? selected.customer.externalId)}</span>
+                  <div>
+                    <div className="cust-name">{selected.customer.name ?? selected.customer.externalId}</div>
+                    <div className="cust-sub">{selected.channel.label}</div>
+                  </div>
+                </div>
+                <div className="stat-row">
+                  <div className="stat"><b>{orders.length}</b><span>orders</span></div>
+                  <div className="stat"><b>{orders.reduce((s, o) => s + o.total, 0).toFixed(0)}</b><span>{orders[0]?.currency ?? 'MYR'} spent</span></div>
+                  <div className="stat"><b>{related.length}</b><span>channels</span></div>
+                </div>
+                <div className="kv"><span className="m">ID</span><b>{selected.customer.externalId}</b></div>
+                {selected.customer.phone && <div className="kv"><span className="m">Phone</span><b>{selected.customer.phone}</b></div>}
+                <div className="kv"><span className="m">Assigned</span><b>{selected.assignee ?? '—'}</b></div>
+                {related.length > 0 && (
+                  <div className="other-ch">
+                    <span className="m">Also on</span>
+                    {related.slice(0, 3).map((r) => (
+                      <button key={r.thread.id} className="oc-chip" onClick={() => setSelectedId(r.thread.id)}>
+                        <span className="dot" style={{ background: CHANNEL_COLOR[r.channel.kind] }} /> {r.channel.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {orders.map((o) => (
+                <div key={o.orderId} className="card order-card">
+                  <div className="order-top">
+                    <span className="order-id">#{o.orderId}</span>
+                    {o.status && <span className="order-status">{o.status}</span>}
+                    <span className="order-total">{o.currency} {o.total.toFixed(2)}</span>
+                  </div>
+                  {o.items.map((it, i) => (
+                    <div key={i} className="order-item">
+                      {it.imageUrl && <img className="order-img" src={it.imageUrl} alt="" />}
+                      <div className="order-item-info">
+                        <div className="order-item-name">{it.name}</div>
+                        <div className="order-item-sub">
+                          {it.sku && <span>SKU {it.sku}</span>}
+                          {it.variation && <span> · {it.variation}</span>}
+                          <span> · ×{it.quantity}</span>
+                        </div>
+                      </div>
+                      <div className="order-item-price">{it.currency} {it.price.toFixed(2)}</div>
+                    </div>
+                  ))}
+                  {(o.paymentMethod || o.trackingNumber || o.logisticsStatus) && (
+                    <div className="order-foot">
+                      {o.paymentMethod && <span>{o.paymentMethod}</span>}
+                      {o.trackingNumber && <span><Icon name="box" size={11} /> {o.logisticsService ?? ''} {o.trackingNumber}</span>}
+                      {o.logisticsStatus && <span>{o.logisticsStatus}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </aside>
+        )}
 
       {waOpen && (
         <div className="wa-overlay" onClick={() => setWaOpen(false)}>
@@ -673,6 +856,45 @@ export function App() {
               <span>AI settings</span>
               <button className="btn ghost" onClick={() => setKeysOpen(false)}>✕</button>
             </div>
+
+            <div className="settings-section-title">Which AI drafts replies</div>
+            <div className="prompt-editor">
+              <select value={providers.find((p) => p.active)?.id ?? ''} onChange={(e) => onPickProvider(e.target.value)}>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}{p.configured ? '' : ' (needs key)'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="settings-section-title">Team</div>
+            <p className="wa-sub">
+              People you can assign conversations to (routing only — no logins). Comma-separated. Pick who
+              <strong> you</strong> are so "Assigned to me" shows your queue.
+            </p>
+            <div className="prompt-editor">
+              <input
+                type="text"
+                placeholder="Farah, Suren, Aina"
+                defaultValue={staff.join(', ')}
+                onBlur={(e) => { const names = e.target.value.split(',').map((s) => s.trim()).filter(Boolean); void saveStaff(names, me && names.includes(me) ? me : names[0] ?? ''); }}
+              />
+              {staff.length > 0 && (
+                <select value={me} onChange={(e) => saveStaff(staff, e.target.value)}>
+                  <option value="">— I am… —</option>
+                  {staff.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
+            </div>
+
+            <div className="settings-section-title">Behaviour</div>
+            <label className="toggle-row">
+              <input type="checkbox" checked={prefs.autoDraft} onChange={(e) => savePrefs({ autoDraft: e.target.checked })} />
+              <span><strong>Auto-generate drafts</strong> — draft a reply for every incoming message. Off saves tokens (generate on demand).</span>
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" checked={prefs.autoAdvance} onChange={(e) => savePrefs({ autoAdvance: e.target.checked })} />
+              <span><strong>Auto-advance</strong> — after Send or Done in a queue, jump to the next unanswered conversation.</span>
+            </label>
 
             <div className="settings-section-title">API keys</div>
             <p className="wa-sub">
