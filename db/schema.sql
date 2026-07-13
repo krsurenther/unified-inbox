@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS threads (
   unread          INTEGER NOT NULL DEFAULT 0,
   last_message_at TEXT NOT NULL,
   created_at      TEXT NOT NULL,
+  assignee        TEXT,                  -- staff name this thread is routed to; NULL = unassigned
   UNIQUE (channel_id, thread_key)
 );
 CREATE INDEX IF NOT EXISTS idx_threads_channel ON threads(channel_id);

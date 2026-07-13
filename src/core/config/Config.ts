@@ -122,6 +122,21 @@ export const AppConfigSchema = z.object({
   /** Hub MCP connector (Claude only): remote tool server the model may call while drafting. */
   mcp: z.object({ url: z.string().default(''), token: z.string().default('') }).default({ url: '', token: '' }),
   channels: z.record(z.string(), ChannelConfigSchema).default({}),
+  /** Auto-generate an AI draft on every inbound. OFF = draft only when the operator presses Generate (saves tokens). */
+  autoDraft: z.boolean().default(false),
+  /** After Send/Done in the Needs-reply queue, jump to the next unanswered thread. */
+  autoAdvance: z.boolean().default(false),
+  /** Assignable staff names (routing labels; no auth). */
+  staff: z.array(z.string()).default([]),
+  /** Who "me" is on this machine — drives the "Assigned to me" queue. */
+  currentStaff: z.string().default(''),
+  /** Persisted UI layout state. */
+  ui: z
+    .object({
+      railCollapsed: z.boolean().default(false),
+      contextOpen: z.boolean().default(true),
+    })
+    .default({ railCollapsed: false, contextOpen: true }),
   whatsapp: z
     .object({
       numbers: z.array(WhatsAppNumberSchema).default([]),

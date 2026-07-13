@@ -44,6 +44,24 @@ export interface Thread {
   unread: number;
   lastMessageAt: string;
   createdAt: string;
+  assignee?: string; // staff name this thread is routed to; undefined = unassigned
+}
+
+/** One channel account for the nav rail — label + live counts. */
+export interface ChannelSummary {
+  channelId: string;
+  kind: ChannelKind;
+  label: string;
+  needs: number; // threads awaiting a reply (last message inbound, not muted, not closed)
+  total: number; // non-closed threads
+}
+
+/** Server-computed triage counts for the nav rail. */
+export interface TriageCounts {
+  needs: number;
+  mine: number;
+  all: number;
+  done: number;
 }
 
 export type DraftStatus = 'suggested' | 'edited' | 'approved' | 'sent' | 'discarded';
@@ -68,4 +86,5 @@ export interface ThreadView {
   lastMessageDirection?: MessageDirection;
   muted?: boolean;
   draft?: Draft;
+  assignee?: string;
 }

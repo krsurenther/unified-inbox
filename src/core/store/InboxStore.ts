@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type {
   ChannelRef,
+  ChannelSummary,
   Customer,
   Draft,
   DraftStatus,
@@ -11,7 +12,9 @@ import type {
   MessageDirection,
   Thread,
   ThreadView,
+  TriageCounts,
 } from '../types';
+import { needsReply } from '../triage';
 
 export interface SendAuditRow {
   id: string;
@@ -60,7 +63,18 @@ export class InboxStore {
     if (!opts.readOnly) {
       const schemaPath = opts.schemaPath ?? resolve(process.cwd(), 'db/schema.sql');
       if (existsSync(schemaPath)) this.db.exec(readFileSync(schemaPath, 'utf8'));
+      this.migrate();
     }
+  }
+
+  /** Add columns introduced after a DB was first created. Idempotent; safe every boot. */
+  private migrate(): void {
+    const cols = (table: string): Set<string> =>
+      new Set((this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((r) => r.name));
+    const add = (table: string, col: string, ddl: string): void => {
+      if (!cols(table).has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    };
+    add('threads', 'assignee', 'assignee TEXT'); // staff routing
   }
 
   /** The connection's busy timeout (ms) — exposed for tests/diagnostics. */
@@ -390,6 +404,76 @@ export class InboxStore {
     return rows.map((r) => this.toThreadView(this.mapThread(r)));
   }
 
+  /** Search by customer name / external id / phone / message body. Empty query → []. */
+  searchThreads(q: string, limit = 50): ThreadView[] {
+    const term = q.trim();
+    if (!term) return [];
+    const like = `%${term.replace(/[\\%_]/g, (m) => '\\' + m)}%`; // escape LIKE wildcards in user input
+    const rows = this.db
+      .prepare(
+        `SELECT t.id AS id FROM threads t
+           JOIN customers c ON c.id = t.customer_id
+           LEFT JOIN messages m ON m.thread_id = t.id
+          WHERE c.name LIKE ? ESCAPE '\\' OR c.external_id LIKE ? ESCAPE '\\'
+             OR c.phone LIKE ? ESCAPE '\\' OR m.body LIKE ? ESCAPE '\\'
+          GROUP BY t.id
+          ORDER BY t.last_message_at DESC
+          LIMIT ?`,
+      )
+      .all(like, like, like, like, limit) as Array<{ id: string }>;
+    return rows.map((r) => this.getThreadView(r.id)).filter((v): v is ThreadView => !!v);
+  }
+
+  /** One row per connected channel (excludes the dev 'fake' channel) with live counts — drives the nav rail. */
+  channelSummaries(): ChannelSummary[] {
+    const chans = this.db
+      .prepare(`SELECT id, kind, label FROM channels WHERE kind != 'fake' ORDER BY kind, label`)
+      .all() as Array<{ id: string; kind: ChannelSummary['kind']; label: string }>;
+    const byId = new Map<string, ChannelSummary>(
+      chans.map((c) => [c.id, { channelId: c.id, kind: c.kind, label: c.label, needs: 0, total: 0 }]),
+    );
+    for (const t of this.listThreads()) {
+      const s = byId.get(t.channel.id);
+      if (!s) continue;
+      if (t.thread.status !== 'closed') s.total += 1;
+      if (needsReply(t)) s.needs += 1;
+    }
+    return [...byId.values()];
+  }
+
+  /** Triage counts for the rail (needs / assigned-to-me / all-open / done). `me` = current staff name. */
+  countsByTriage(me?: string): TriageCounts {
+    const c: TriageCounts = { needs: 0, mine: 0, all: 0, done: 0 };
+    for (const t of this.listThreads()) {
+      if (t.thread.status === 'closed') { c.done += 1; continue; }
+      c.all += 1;
+      if (needsReply(t)) c.needs += 1;
+      if (me && t.assignee === me) c.mine += 1;
+    }
+    return c;
+  }
+
+  /** Route a thread to a staff member (or null to unassign). */
+  assignThread(threadId: string, assignee: string | null): void {
+    this.db.prepare(`UPDATE threads SET assignee = ? WHERE id = ?`).run(assignee, threadId);
+  }
+
+  /** Other threads for the same person (matched by phone or external id) on any channel. */
+  relatedThreads(threadId: string): ThreadView[] {
+    const t = this.getThreadView(threadId);
+    if (!t) return [];
+    const phone = t.customer.phone ?? '';
+    const ext = t.customer.externalId;
+    const rows = this.db
+      .prepare(
+        `SELECT t2.id AS id FROM threads t2 JOIN customers c2 ON c2.id = t2.customer_id
+          WHERE t2.id != ? AND ((? != '' AND c2.phone = ?) OR c2.external_id = ?)
+          ORDER BY t2.last_message_at DESC`,
+      )
+      .all(threadId, phone, phone, ext) as Array<{ id: string }>;
+    return rows.map((r) => this.getThreadView(r.id)).filter((v): v is ThreadView => !!v);
+  }
+
   // --- settings k/v (restart-durable app state) ---------------------------
 
   getSetting(key: string): string | undefined {
@@ -449,6 +533,7 @@ export class InboxStore {
       lastMessageDirection: (last?.direction as MessageDirection) ?? undefined,
       muted: this.isThreadMuted(thread.id),
       draft: this.getLatestDraft(thread.id),
+      assignee: thread.assignee,
     };
   }
 
@@ -475,6 +560,7 @@ export class InboxStore {
       unread: Number(r.unread),
       lastMessageAt: r.last_message_at as string,
       createdAt: r.created_at as string,
+      assignee: (r.assignee as string) ?? undefined,
     };
   }
 
