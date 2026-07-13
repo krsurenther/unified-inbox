@@ -75,6 +75,10 @@ export function App() {
   const [results, setResults] = useState<ThreadView[] | null>(null); // non-null while searching
   const [related, setRelated] = useState<ThreadView[]>([]);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [quickReplies, setQuickReplies] = useState<string[]>([]);
+  const [qrOpen, setQrOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const refreshThreads = useCallback(async () => {
@@ -174,12 +178,29 @@ export function App() {
     return () => clearInterval(iv);
   }, [selectedId, refreshThreads, refreshRail]);
 
-  // One-time load: rail, staff, UI prefs.
+  // One-time load: rail, staff, UI prefs, quick replies.
   useEffect(() => {
     void refreshRail();
     inbox.listStaff().then((s) => { setStaff(s.staff); setMe(s.me); }).catch(() => {});
     inbox.getUiPrefs().then(setPrefs).catch(() => {});
+    inbox.getQuickReplies().then(setQuickReplies).catch(() => {});
   }, [refreshRail]);
+
+  // Load the customer note into the editor when the thread changes.
+  useEffect(() => { setNote(selected?.customer.note ?? ''); }, [selectedId, selected?.customer.note]);
+
+  const onNoteChange = (v: string) => {
+    setNote(v);
+    if (noteTimer.current) clearTimeout(noteTimer.current);
+    const tid = selectedId;
+    if (!tid) return;
+    noteTimer.current = setTimeout(() => { void inbox.setThreadNote(tid, v); }, 700);
+  };
+
+  const insertQuickReply = (text: string) => {
+    setQrOpen(false);
+    onDraftChange(draftBody.trim() ? `${draftBody.trim()} ${text}` : text);
+  };
 
   // Debounced search — matches name / phone / id / message body server-side.
   useEffect(() => {
@@ -238,8 +259,8 @@ export function App() {
     return inbox.onWaUpdate(setWaNumbers);
   }, []);
 
-  // Open the thread when a macOS notification is clicked.
-  useEffect(() => inbox.onSelectThread((id) => setSelectedId(id)), []);
+  // Open the thread when a macOS notification is clicked — switch to All so it's always visible.
+  useEffect(() => inbox.onSelectThread((id) => { setSelectedId(id); setFilter('all'); setQuery(''); }), []);
 
   // Channel + drafting health — polled for the status banners.
   useEffect(() => {
@@ -677,13 +698,27 @@ export function App() {
                 <textarea
                   value={draftBody}
                   onChange={(e) => onDraftChange(e.target.value)}
-                  placeholder={drafting ? 'Generating a reply…' : 'Type a reply, or generate one…'}
+                  onKeyDown={(e) => { if (e.key === '/' && !draftBody) { e.preventDefault(); setQrOpen(true); } }}
+                  placeholder={drafting ? 'Generating a reply…' : 'Type a reply, / for quick replies, or generate…'}
                   rows={4}
                 />
                 <div className="composer-actions">
                   <button className="btn gen" onClick={onRegenerate} disabled={pacing || drafting}>
                     <Icon name="sparkle" size={13} /> {drafting ? 'Generating…' : draftBody.trim() ? 'Regenerate' : 'Generate with AI'} <span className="kbd">⌘G</span>
                   </button>
+                  <div className="qr-wrap">
+                    <button className="btn" onClick={() => setQrOpen((v) => !v)} disabled={pacing} title="Quick replies">
+                      <Icon name="list" size={13} /> Quick reply <span className="kbd">/</span>
+                    </button>
+                    {qrOpen && (
+                      <div className="qr-menu" onMouseLeave={() => setQrOpen(false)}>
+                        {quickReplies.length === 0 && <div className="qr-empty">Add canned replies in AI settings → Quick replies</div>}
+                        {quickReplies.map((r, i) => (
+                          <button key={i} onClick={() => insertQuickReply(r)}>{r}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <span className="spacer" />
                   <span className="safety-foot"><Icon name="lock" size={11} /> approval required</span>
                   <button className="btn primary" onClick={onSend} disabled={pacing || drafting || !draftBody.trim()}>
@@ -729,6 +764,16 @@ export function App() {
                     ))}
                   </div>
                 )}
+              </div>
+              <div className="card">
+                <h3><Icon name="user" size={12} /> Notes</h3>
+                <textarea
+                  className="note-box"
+                  placeholder="Shared note — e.g. card only, prefers pickup, asked about 55&quot; upgrade…"
+                  value={note}
+                  onChange={(e) => onNoteChange(e.target.value)}
+                  rows={3}
+                />
               </div>
               {orders.map((o) => (
                 <div key={o.orderId} className="card order-card">
@@ -884,6 +929,20 @@ export function App() {
                   {staff.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               )}
+            </div>
+
+            <div className="settings-section-title">Quick replies</div>
+            <p className="wa-sub">
+              Canned answers you insert with <strong>/</strong> in the reply box (bank details, opening hours,
+              warranty steps…). One per line.
+            </p>
+            <div className="prompt-editor">
+              <textarea
+                rows={5}
+                defaultValue={quickReplies.join('\n')}
+                placeholder={'Bank in to Maybank 5124xxxx, then send the receipt here 🙏\nWe open daily 10am–9pm, Temerloh & Mentakab.'}
+                onBlur={(e) => { const list = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean); void inbox.setQuickReplies(list).then(setQuickReplies); }}
+              />
             </div>
 
             <div className="settings-section-title">Behaviour</div>

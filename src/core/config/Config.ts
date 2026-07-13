@@ -128,6 +128,8 @@ export const AppConfigSchema = z.object({
   autoAdvance: z.boolean().default(false),
   /** Assignable staff names (routing labels; no auth). */
   staff: z.array(z.string()).default([]),
+  /** Canned reply snippets the operator can insert with '/'. Plain reply text. */
+  quickReplies: z.array(z.string()).default([]),
   /** Who "me" is on this machine — drives the "Assigned to me" queue. */
   currentStaff: z.string().default(''),
   /** Persisted UI layout state. */

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS customers (
   phone       TEXT,
   meta        TEXT,                      -- JSON
   created_at  TEXT NOT NULL,
+  note        TEXT,                      -- team-shared free-text note on this customer
   UNIQUE (channel_id, external_id)
 );
 

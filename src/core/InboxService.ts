@@ -356,4 +356,10 @@ export class InboxService {
   assignThread(threadId: string, assignee: string | null): void {
     this.store.assignThread(threadId, assignee);
   }
+
+  /** Save a team-shared note on the customer behind a thread. */
+  setThreadNote(threadId: string, note: string): void {
+    const view = this.store.getThreadView(threadId);
+    if (view) this.store.setCustomerNote(view.customer.id, note);
+  }
 }

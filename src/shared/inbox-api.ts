@@ -60,6 +60,11 @@ export interface InboxApi {
   relatedThreads(threadId: string): Promise<ThreadView[]>;
   /** Route a thread to a staff member (null unassigns). */
   assignThread(threadId: string, assignee: string | null): Promise<void>;
+  /** Save the team-shared note on the customer behind a thread ('' clears it). */
+  setThreadNote(threadId: string, note: string): Promise<void>;
+  /** Canned reply snippets, and save them. */
+  getQuickReplies(): Promise<string[]>;
+  setQuickReplies(replies: string[]): Promise<string[]>;
   /** Assignable staff + who "me" is on this machine. */
   listStaff(): Promise<{ staff: string[]; me: string }>;
   setStaff(staff: string[], me: string): Promise<{ staff: string[]; me: string }>;

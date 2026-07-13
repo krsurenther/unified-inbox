@@ -281,6 +281,13 @@ function registerIpc(): void {
   ipcMain.handle('inbox:triageCounts', () => service.countsByTriage());
   ipcMain.handle('inbox:related', (_e, threadId: string) => service.relatedThreads(threadId));
   ipcMain.handle('inbox:assign', (_e, threadId: string, assignee: string | null) => service.assignThread(threadId, assignee));
+  ipcMain.handle('inbox:note', (_e, threadId: string, note: string) => service.setThreadNote(threadId, note));
+  ipcMain.handle('qr:get', () => config.quickReplies ?? []);
+  ipcMain.handle('qr:set', (_e, replies: string[]) => {
+    config.quickReplies = Array.isArray(replies) ? replies.map((r) => r.trim()).filter(Boolean) : [];
+    persistConfig();
+    return config.quickReplies;
+  });
   ipcMain.handle('staff:get', () => ({ staff: config.staff ?? [], me: config.currentStaff ?? '' }));
   ipcMain.handle('staff:set', (_e, staff: string[], me: string) => {
     config.staff = Array.isArray(staff) ? staff.map((s) => s.trim()).filter(Boolean) : [];

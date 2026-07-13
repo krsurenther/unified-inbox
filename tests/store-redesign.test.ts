@@ -76,6 +76,18 @@ describe('InboxStore triage counts + assignment', () => {
   });
 });
 
+describe('InboxStore.setCustomerNote', () => {
+  it('round-trips a customer note and clears it with an empty string', () => {
+    const s = new InboxStore(':memory:');
+    const t = seed(s, 'whatsapp:1', 'whatsapp', '601', 'A');
+    const cid = s.getThreadView(t.id)!.customer.id;
+    s.setCustomerNote(cid, '  card only, no COD  ');
+    expect(s.getThreadView(t.id)!.customer.note).toBe('card only, no COD'); // trimmed
+    s.setCustomerNote(cid, '   ');
+    expect(s.getThreadView(t.id)!.customer.note).toBeUndefined(); // blank clears
+  });
+});
+
 describe('InboxStore.relatedThreads', () => {
   it('finds the same person on another channel by shared phone', () => {
     const s = new InboxStore(':memory:');

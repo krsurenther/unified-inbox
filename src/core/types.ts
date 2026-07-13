@@ -17,6 +17,7 @@ export interface Customer {
   phone?: string;
   meta?: Record<string, unknown>;
   createdAt: string;
+  note?: string; // free-text note the team shares on this customer
 }
 
 export type MessageDirection = 'inbound' | 'outbound';

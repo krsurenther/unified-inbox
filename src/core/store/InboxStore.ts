@@ -75,6 +75,7 @@ export class InboxStore {
       if (!cols(table).has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
     };
     add('threads', 'assignee', 'assignee TEXT'); // staff routing
+    add('customers', 'note', 'note TEXT'); // team-shared customer note
   }
 
   /** The connection's busy timeout (ms) — exposed for tests/diagnostics. */
@@ -458,6 +459,11 @@ export class InboxStore {
     this.db.prepare(`UPDATE threads SET assignee = ? WHERE id = ?`).run(assignee, threadId);
   }
 
+  /** Save a team-shared note on a customer (empty string clears it). */
+  setCustomerNote(customerId: string, note: string): void {
+    this.db.prepare(`UPDATE customers SET note = ? WHERE id = ?`).run(note.trim() || null, customerId);
+  }
+
   /** Other threads for the same person (matched by phone or external id) on any channel. */
   relatedThreads(threadId: string): ThreadView[] {
     const t = this.getThreadView(threadId);
@@ -573,6 +579,7 @@ export class InboxStore {
       phone: (r.phone as string) ?? undefined,
       meta: r.meta ? (JSON.parse(r.meta as string) as Record<string, unknown>) : undefined,
       createdAt: r.created_at as string,
+      note: (r.note as string) ?? undefined,
     };
   }
 
